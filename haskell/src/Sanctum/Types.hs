@@ -41,6 +41,7 @@ data BlockHeader = BlockHeader
   , hdrMerkleRoot :: Hash
   , hdrBlockTime  :: Integer   -- BFT-agreed median time
   , hdrEpoch      :: Int       -- which validator set finalised it
+  , hdrMaxSkew    :: Integer   -- the clock-skew window this block was finalised under
   } deriving (Eq, Show)
 
 data Block = Block

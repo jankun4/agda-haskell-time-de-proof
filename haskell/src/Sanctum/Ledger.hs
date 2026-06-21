@@ -35,6 +35,7 @@ headerHash h = tagged DHeader
   , unHash (hdrMerkleRoot h)
   , fromIntegral (hdrBlockTime h)
   , fromIntegral (hdrEpoch h)
+  , fromIntegral (hdrMaxSkew h)        -- the skew window is signed & auditable
   ]
 
 -- | Hash of the chain head (zeroHash for the empty/genesis-less chain).
@@ -69,15 +70,17 @@ countValidSigners vs msg sigs =
 hpair :: Hash -> Hash -> Hash
 hpair a b = tagged DNode [unHash a, unHash b]
 
+-- one level of the duplicate-last binary tree (shared by root & path)
+pairUp :: [Hash] -> [Hash]
+pairUp (a : b : rest) = hpair a b : pairUp rest
+pairUp [a]            = [hpair a a]
+pairUp []             = []
+
 -- root of the bare tree (duplicate-last for odd levels)
 bareRoot :: [Hash] -> Hash
 bareRoot []  = zeroHash
 bareRoot [x] = x
 bareRoot xs  = bareRoot (pairUp xs)
-  where
-    pairUp (a : b : rest) = hpair a b : pairUp rest
-    pairUp [a]            = [hpair a a]
-    pairUp []             = []
 
 -- | The count-bound Merkle root committed to in the header.
 merkleRoot :: [Hash] -> Hash
@@ -92,10 +95,6 @@ merklePath xs i
                   then safeAt xs (i + 1) (safeAt xs i zeroHash)  -- right sibling (dup if absent)
                   else safeAt xs (i - 1) zeroHash
       in sib : merklePath (pairUp xs) (i `div` 2)
-  where
-    pairUp (a : b : rest) = hpair a b : pairUp rest
-    pairUp [a]            = [hpair a a]
-    pairUp []             = []
 
 safeAt :: [a] -> Int -> a -> a
 safeAt xs i d = if i >= 0 && i < length xs then xs !! i else d

@@ -133,6 +133,14 @@ formally treated here.
 > *abstract* Agda `Approves`/lineage theorem is still not mechanically tied
 > to this concrete walker — see §2.)
 
+> **Hardened (round 4):** the clock-skew window `maxSkew` is now a signed
+> `BlockHeader` field (`hdrMaxSkew`), so a verifier can see — and the quorum
+> attests to — the time window a block was finalised under; `verifyLineageTo`
+> now re-verifies the *entire* provided lineage and distinguishes an
+> *invalid* step from an *incomplete* (withheld/short) lineage. Open
+> charter sub-items (m-of-n, rotation/expiry, consortium-ID) are tracked in
+> roadmap §8; the honest-fraction (slow-coup) bound remains governance.
+
 ## 7. Salting not implemented
 
 Document digests carry no salt, so low-entropy documents (a clinical-form

@@ -53,18 +53,17 @@ charterDigest vs =
 -- | Verify a charter: the genesis set is well-formed and EVERY genesis
 --   member has signed it.  Returns the trusted genesis set (epoch 0).
 verifyCharter :: Charter -> Either String ValidatorSet
-verifyCharter (Charter gen sigs)
-  | not (wellFormedVSet gen) =
+verifyCharter (Charter genesis sigs)
+  | not (wellFormedVSet genesis) =
       Left "charter rejected: genesis set malformed"
-  | signedMembers /= length (vsetMembers gen) =
+  | signedMembers /= length (vsetMembers genesis) =
       Left "charter rejected: not every founding member signed the genesis set"
-  | otherwise = Right gen
+  | otherwise = Right genesis
   where
-    msg           = charterDigest gen
+    msg           = charterDigest genesis
     signedMembers =
-      length (nub [ idn | idn <- vsetMembers gen
-                        , (s, sg) <- sigs', s == idn, verify idn msg sg ])
-    sigs'         = sigs
+      length (nub [ idn | idn <- vsetMembers genesis
+                        , (s, sg) <- sigs, s == idn, verify idn msg sg ])
 
 ----------------------------------------------------------------------
 -- The reconfiguration lineage
@@ -78,21 +77,30 @@ data ReconfigStep = ReconfigStep
   , rsSigs  :: [(Identity, Sig)]
   } deriving (Eq, Show)
 
--- | Walk the lineage from the charter genesis (epoch 0) through the first
---   @targetEpoch@ steps, re-verifying each with 'adoptValidatorSet'.
---   Returns the validator set in force AT @targetEpoch@.
+-- | Walk the lineage from the charter genesis (epoch 0), re-verifying
+--   EVERY step with 'adoptValidatorSet', and return the validator set in
+--   force at @targetEpoch@.  The whole provided lineage is verified (no
+--   trailing step is trusted unchecked), and the two failure modes are
+--   kept distinct: a *malformed/forged step* ("invalid") versus simply
+--   *not enough steps* to reach the epoch ("incomplete") — so an operator
+--   can tell forgery from a withheld/short lineage (Agent 5 H, Agent 0).
 verifyLineageTo :: Charter -> [ReconfigStep] -> Int -> Either String ValidatorSet
-verifyLineageTo charter steps targetEpoch = do
-  gen <- verifyCharter charter
-  go 0 gen steps
+verifyLineageTo charter steps targetEpoch
+  | targetEpoch < 0 = Left "lineage: negative target epoch"
+  | otherwise = do
+      genesis <- verifyCharter charter
+      sets    <- go 0 genesis steps     -- sets !! e = verified set in force at epoch e
+      case drop targetEpoch sets of
+        (s : _) -> Right s
+        []      -> Left "lineage incomplete: not enough reconfiguration steps \
+                        \to reach the Testament's epoch"
   where
-    go epoch current _
-      | epoch == targetEpoch = Right current
-    go _ _ [] =
-      Left "lineage too short: no reconfiguration reaches the Testament's epoch"
-    go epoch current (ReconfigStep next sigs : rest) = do
-      adopted <- adoptValidatorSet epoch current sigs (epoch + 1) next
-      go (epoch + 1) adopted rest
+    go _ current [] = Right [current]
+    go epoch current (ReconfigStep next sigs : rest) =
+      case adoptValidatorSet epoch current sigs (epoch + 1) next of
+        Left e        -> Left ("lineage invalid at epoch " ++ show epoch
+                               ++ "->" ++ show (epoch + 1) ++ ": " ++ e)
+        Right adopted -> (current :) <$> go (epoch + 1) adopted rest
 
 ----------------------------------------------------------------------
 -- Offline Testament verification anchored to genesis

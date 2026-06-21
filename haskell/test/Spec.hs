@@ -9,6 +9,7 @@ import           Control.Monad (unless)
 import           System.Exit   (exitFailure)
 import           System.IO     (hSetEncoding, stdout, utf8)
 import           Data.IORef
+import           Data.List     (isInfixOf)
 import           Sanctum.Crypto
 import           Sanctum.Core
 import           Sanctum.Types
@@ -113,6 +114,20 @@ main = do
           let tEp5 = t { tHeader = (tHeader t) { hdrEpoch = 5 } }
           c "lineage too short for the Testament's epoch is rejected"
             (either (const True) (const False) (verifyTestamentFromCharter charter [] tEp5))
+          -- R4: exercise the MULTI-STEP walker (was untested — Agents 0/5).
+          let hF    = mkHospital "F" 6
+              nset  = ValidatorSet (vsetMembers vs ++ [hId hF]) 1     -- n=5,f=1, one join
+              smsg  = reconfigDigest (vsetMembers vs) 0 (vsetMembers nset) 1 1
+              gstep = ReconfigStep nset [ (hId x, sign (hSecret x) smsg) | x <- [h,h2,hC] ]
+              bstep = ReconfigStep nset (take 1 (rsSigs gstep))        -- 1 sig < quorum 3
+          c "lineage walker: genuine 1-step reaches the epoch-1 set"
+            (verifyLineageTo charter [gstep] 1 == Right nset)
+          c "lineage walker: forged/short step rejected as INVALID (not incomplete)"
+            (either (isInfixOf "invalid") (const False)
+                    (verifyLineageTo charter [bstep] 1))
+          c "lineage walker: missing steps rejected as INCOMPLETE (not invalid)"
+            (either (isInfixOf "incomplete") (const False)
+                    (verifyLineageTo charter [] 1))
 
   -- ── Reconfiguration safety (council C1/H5 + R2 hardening) ──────────
   let hE      = mkHospital "E" 5

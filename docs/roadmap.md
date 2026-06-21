@@ -38,11 +38,12 @@ rewrite of a working, verified system.
    anchoring into an external medium, upgrading time from *consistency*
    toward *correctness*. (VDFs are the wrong tool — they measure elapsed
    time, not wall-clock.)
-8. **Signed founding charter + light-client lineage walker.** Make the
-   genesis trust anchor a signed object the code verifies, and ship a
-   runnable verifier that walks genesis→epoch reconfigurations so air-gapped
-   sites can check *which* validator set to trust. (Closes threat-model
-   T1/T4.)
+8. **Signed founding charter + light-client lineage walker.** ✅ *Shipped
+   (round 3, hardened round 4): `Sanctum.Lineage` — `Charter` +
+   `verifyTestamentFromCharter` walks genesis→epoch, re-verifying every
+   reconfiguration.* Remaining sub-items (round 5+): m-of-n charter,
+   charter rotation/expiry, consortium-ID binding, and an honest-floor
+   coup-rate bound (see limitations §2).
 9. **Salted commitments.** Add an off-ledger nonce to document digests so
    low-entropy clinical forms cannot be confirmed by brute force.
 

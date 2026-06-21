@@ -51,6 +51,7 @@ finalise maxSkew vs epoch chain payload votes
                      , hdrMerkleRoot = mroot
                      , hdrBlockTime  = blockTime
                      , hdrEpoch      = epoch
+                     , hdrMaxSkew    = maxSkew
                      }
       hh         = headerHash header
       sigs       = [ (voteId v, sign (voteSk v) hh) | v <- endorsers ]
