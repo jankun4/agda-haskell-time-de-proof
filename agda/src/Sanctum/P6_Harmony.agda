@@ -44,7 +44,8 @@ import Sanctum.Proofs.Time as T
 module Agreement
   (vs  : ValidatorSet)
   (h   : Vec Bool (size vs))                       -- the honest validators
-  (n≤  : size vs ≤ 3 * fault vs + 1)               -- n ≤ 3f+1
+  (qb  : size vs + (fault vs + 1) ≤                -- quorum obligation 2q ≥ n+f+1
+         quorumThreshold vs + quorumThreshold vs)  --   (holds for q=n−f when n≥3f+1)
   (d≤f : count (∁ h) ≤ fault vs)                   -- at most f dishonest
   where
 
@@ -57,10 +58,12 @@ module Agreement
            × lookup h i ≡ true )
   shared-honest-signer c₁ c₂ q₁ q₂ =
     Q.quorum-intersection-honest (fault vs)
-      (signers c₁) (signers c₂) h n≤ q₁ q₂ d≤f
+      (signers c₁) (signers c₂) h (quorumThreshold vs) qb q₁ q₂ d≤f
 
   -- Consequently, given that honest validators do not equivocate (sign
   -- two different blocks at one height), two finalised blocks coincide.
+  -- NOTE: no-equivocation is taken here as a hypothesis, not yet proved
+  -- from a per-height voting model (see docs/limitations.md §2).
   no-two-conflicting :
     (b₁ b₂ : Block)
     (c₁ c₂ : QuorumCert (size vs)) →
@@ -79,6 +82,9 @@ module Agreement
 --
 -- A block's `blockTime` is the median of the quorum's clock samples.
 -- If > f signers are honest with clocks in [lo,hi], the median is too.
+-- NOTE: this is conditional on `IsMedian`; that the executable `medianTime`
+-- produces such a value is tested, not yet proved (docs/limitations.md §2).
+-- The bound is a *consistency* guarantee, not absolute time (timestamping.md).
 
 module TimeSoundness (f : ℕ) where
 

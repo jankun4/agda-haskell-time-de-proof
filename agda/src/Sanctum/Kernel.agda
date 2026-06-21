@@ -27,7 +27,7 @@ open import Agda.Builtin.Nat using (Nat; zero; suc; _+_; _*_)
   renaming (_<_ to _<ᵇ_; _==_ to _==ᵇ_)
 open import Data.Bool.Base using (Bool; true; false; if_then_else_; _∧_)
 open import Data.List.Base using (List; []; _∷_; length)
-open import Data.Nat using (_≤ᵇ_)
+open import Data.Nat using (_≤ᵇ_; _∸_)
 
 ------------------------------------------------------------------------
 -- Counting signatories and the quorum rule.
@@ -37,12 +37,15 @@ countTrue []           = 0
 countTrue (true  ∷ xs) = suc (countTrue xs)
 countTrue (false ∷ xs) = countTrue xs
 
--- A quorum needs ≥ 2·f + 1 signatures.
-quorumThreshold : Nat → Nat
-quorumThreshold f = 2 * f + 1
+-- A quorum needs "all but f" of the n validators: n − f signatures.
+-- (At n = 3f+1 this is the classic 2f+1; it scales for n > 3f+1 so that
+--  quorum intersection still yields an honest validator — see
+--  Sanctum.Proofs.Quorum.)
+quorumThreshold : Nat → Nat → Nat
+quorumThreshold n f = n ∸ f
 
-quorumReached : Nat → List Bool → Bool
-quorumReached f signers = quorumThreshold f ≤ᵇ countTrue signers
+quorumReached : Nat → Nat → List Bool → Bool
+quorumReached n f signers = quorumThreshold n f ≤ᵇ countTrue signers
 
 ------------------------------------------------------------------------
 -- The BFT-agreed block time: median of the validators' clock samples.
@@ -117,13 +120,15 @@ postulate
 {-# COMPILE GHC putStrLn = TIO.putStrLn #-}
 {-# COMPILE GHC _>>_ = (>>) #-}
 
--- demo data: 5 validator clocks, one Byzantine liar (the 999)
+-- demo data: 4 validators, one Byzantine liar (999999) — mirrors the
+-- Haskell node's first round so the proven kernel and the demo tell one
+-- story with the same numbers.
 clocks : List Nat
-clocks = 101 ∷ 100 ∷ 999 ∷ 102 ∷ 99 ∷ []
+clocks = 1000 ∷ 1001 ∷ 1002 ∷ 999999 ∷ []
 
--- 5 signers, 4 of whom signed (a quorum for f = 1 needs 3)
+-- all 4 validators signed; a quorum for n=4, f=1 needs n−f = 3.
 signers : List Bool
-signers = true ∷ true ∷ false ∷ true ∷ true ∷ []
+signers = true ∷ true ∷ true ∷ true ∷ []
 
 -- a contract:  if (2 ≤ 3) then 7*6 else 0   ⇒ 42
 demoContract : Expr
@@ -132,6 +137,6 @@ demoContract = ite (leq (lit 2) (lit 3)) (mul (lit 7) (lit 6)) (lit 0)
 main =
       putStrLn ("Sanctum kernel self-test (extracted from Agda)")
    >> putStrLn ("  median block time = " ++ show (medianTime clocks)
-                ++ "  (Byzantine 999 rejected)")
-   >> putStrLn ("  quorum reached (f=1) = " ++ showBool (quorumReached 1 signers))
+                ++ "  (Byzantine 999999 rejected)")
+   >> putStrLn ("  quorum reached (n=4,f=1) = " ++ showBool (quorumReached 4 1 signers))
    >> putStrLn ("  contract result = " ++ show (runContract demoContract))

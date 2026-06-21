@@ -28,33 +28,40 @@ are not all connected to the outside world.
 ```
 
 The **kernel** (the security-critical arithmetic: quorum threshold, median
-time, total contract evaluation) is written in Agda, proved, and extracted
-to Haskell. The **shell** (keys, networking, storage, CLI) is conventional
-Haskell. `Sanctum.Core` is the hand-mirror of the kernel so the node builds
+time, total contract evaluation) is written in Agda and proved.
+`Sanctum.Core` is a faithful hand-mirror of that kernel, so the node builds
 without the Agda toolchain; `scripts/extract.sh` produces the literal
-generated version.
+MAlonzo-generated version and CI runs it. (The node currently links the
+mirror, not the generated module — see [limitations.md](limitations.md) §1.)
+The **shell** here is deliberately thin: `Node` provides hospital identities
+and attestation construction only. Networking, gossip, and persistence are
+**not implemented** — they are deployment concerns (see limitations §6).
 
 ## Trust model in one line
 
 > *No hospital trusts another's word; everyone trusts a quorum and trusts
 > mathematics.*
 
-A node accepts a block only if it carries a **quorum certificate** (≥ 2f+1
-validator signatures). It accepts a *time* only as the **median** of the
-quorum's clocks. It accepts a *contract result* only because the contract
-is **provably total**. None of these require trusting any single party.
+A node accepts a block only if it carries a **quorum certificate** of
+**verified** signatures (≥ `n−f` distinct members; at `n = 3f+1` that is the
+classic `2f+1`). The count is taken from signatures that actually verify,
+never from a self-declared vector. It accepts a *time* only as the
+**median** of the quorum's clocks. It accepts a *contract result* only
+because the contract is **provably total**. None of these require trusting
+any single party.
 
 ## Data flow: timestamping a document
 
 1. A hospital hashes the document → a `Fact`, signs `author‖fact‖time`
    → an `Attestation` (Principle 3).
-2. Attestations are gossiped and gathered by a block proposer into a block
-   (Principle 4). The block's Merkle root commits to them.
+2. Attestations are disseminated (gossip layer is out of scope) and
+   gathered by a block proposer into a block (Principle 4). The block's
+   Merkle root commits to them.
 3. Validators run a finalisation round (`Consensus.finalise`, Principle 5):
    each contributes a clock sample and a signature over the header. The
    header's `blockTime` is the **median** of the samples.
-4. With ≥ 2f+1 signatures the block is final and appended. The chain is
-   append-only (`Proofs.Append`).
+4. With ≥ `n−f` verified signatures the block is final and appended. The
+   chain is append-only (`Proofs.Append`).
 5. Anyone can extract a **Testament** (Principle 6): the attestation, the
    header, the validator set, the quorum certificate, and a Merkle
    inclusion path. It proves "this document existed by `blockTime`".
@@ -96,15 +103,22 @@ The validator set is itself part of the replicated state, versioned by an
 
 1. A proposal names the next `ValidatorSet` (e.g. current members + the new
    hospital), which must satisfy `n ≥ 3f+1`.
-2. A **quorum of the current set** signs the proposal
-   (`Ledger.adoptValidatorSet` checks ≥ 2f+1).
+2. A **quorum of the current set** *signs* a certificate that commits to
+   exactly the proposed members and the target epoch.
+   `Ledger.adoptValidatorSet` then checks: the target epoch is the
+   successor; ≥ `n−f` *verified* current-member signatures over that exact
+   certificate; a quorum of the current set persists into the new set (no
+   wholesale handover); and the fault budget rises by at most one. This
+   binding is what stops a stale or forged certificate from installing
+   attacker validators.
 3. From the next epoch, blocks are finalised under the new set.
 
-Because every set is adopted only by the previous set's quorum, authority
-forms an unbroken lineage back to genesis — proved as
-`Proofs.Append.Reconfiguration.authorised→lineage`. A light client tracks
-this lineage from the header chain alone, so even an air-gapped verifier can
-know *which* validator set to trust for a given epoch.
+Because every set is adopted only by the previous set's signed quorum,
+authority forms an unbroken lineage back to genesis — proved abstractly as
+`Proofs.Append.Reconfiguration.authorised→lineage`. A light client that
+walks this lineage from the header chain (so an air-gapped verifier can know
+*which* set to trust per epoch) is specified but **not yet implemented** —
+see [limitations.md](limitations.md) and [threat-model.md](threat-model.md).
 
 This also covers **leaving** (remove a member), **key rotation** (swap an
 identity), and **changing the fault budget** `f` as the network grows.

@@ -34,7 +34,7 @@ mkHospital name seed =
 makeAttestation :: Hospital -> Text -> Integer -> Attestation
 makeAttestation h docText claimedT =
   let fact   = Fact (digestText docText)
-      digest = attestationDigest (hId h) fact claimedT
+      digest = attestationDigest (hId h) (factDigest fact) claimedT
       s      = sign (hSecret h) digest
   in Attestation
        { attAuthor      = hId h

@@ -30,51 +30,38 @@ private
 
 ------------------------------------------------------------------------
 -- MAIN THEOREM · A quorum intersection contains an honest validator.
+--
+-- Stated for an abstract quorum threshold q, with the single arithmetic
+-- obligation  n + (f+1) ≤ q + q  (equivalently 2q ≥ n+f+1).  This covers
+-- BOTH the deployment rule (q = n−f when n ≥ 3f+1; see `deployment-bound`)
+-- and the classic n = 3f+1 case (q = 2f+1).  Crucially, the running node
+-- uses q = n−f, so the theorem applies to validator sets with n > 3f+1 —
+-- the configuration a fixed 2f+1 threshold would silently break.
 
 module _ (f : ℕ) where
 
-  -- A quorum needs at least 2f+1 signatures.
-  QuorumThreshold : ℕ
-  QuorumThreshold = 2 * f + 1
-
-  -- Arithmetic core, discharged by the ring solver.
-  private
-    sizes : (2 * f + 1) + (2 * f + 1) ≡ (3 * f + 1) + (f + 1)
-    sizes = go f
-      where
-        open import Data.Nat.Solver using (module +-*-Solver)
-        open +-*-Solver
-        go : ∀ g → (2 * g + 1) + (2 * g + 1) ≡ (3 * g + 1) + (g + 1)
-        go = solve 1
-          (λ x → (con 2 :* x :+ con 1) :+ (con 2 :* x :+ con 1)
-               := (con 3 :* x :+ con 1) :+ (x :+ con 1))
-          refl
-
   quorum-intersection-honest :
-    (a b h : Vec Bool n) →
-    n ≤ 3 * f + 1 →                 -- fault assumption: n ≤ 3f+1
-    QuorumThreshold ≤ count a →     -- a is a quorum
-    QuorumThreshold ≤ count b →     -- b is a quorum
+    (a b h : Vec Bool n) (q : ℕ) →
+    n + (f + 1) ≤ q + q →           -- quorum-size obligation: 2q ≥ n+f+1
+    q ≤ count a →                   -- a is a quorum
+    q ≤ count b →                   -- b is a quorum
     count (∁ h) ≤ f →               -- at most f dishonest
     ∃[ i ] (lookup a i ≡ true × lookup b i ≡ true × lookup h i ≡ true)
-  quorum-intersection-honest {n} a b h n≤3f+1 qa qb d≤f = result
+  quorum-intersection-honest {n} a b h q qbound qa qb d≤f = result
     where
       cab  = count (a ∩ b)
       cg   = count ((a ∩ b) ∩ h)
       cd'  = count ((a ∩ b) ∩ ∁ h)
 
-      -- |a ∩ b| ≥ f+1
-      sum≥ : (2 * f + 1) + (2 * f + 1) ≤ count a + count b
+      -- |a ∩ b| ≥ f+1, from  n+(f+1) ≤ q+q ≤ |a|+|b| ≤ n+|a∩b|
+      sum≥ : q + q ≤ count a + count b
       sum≥ = +-mono-≤ qa qb
 
-      chain : (3 * f + 1) + (f + 1) ≤ (3 * f + 1) + cab
-      chain = subst (_≤ (3 * f + 1) + cab) sizes
-               (≤-trans sum≥
-                 (≤-trans (ie-bound a b)
-                          (+-monoˡ-≤ cab n≤3f+1)))
+      chain : n + (f + 1) ≤ n + cab
+      chain = ≤-trans qbound (≤-trans sum≥ (ie-bound a b))
 
       ab≥f+1 : f + 1 ≤ cab
-      ab≥f+1 = +-cancelˡ-≤ (3 * f + 1) chain
+      ab≥f+1 = +-cancelˡ-≤ n chain
 
       -- |(a ∩ b) ∩ h| ≥ 1
       split : cab ≡ cg + cd'

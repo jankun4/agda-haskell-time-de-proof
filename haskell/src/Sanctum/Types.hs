@@ -4,7 +4,6 @@ module Sanctum.Types
     Fact(..)
     -- P3 Connection
   , Attestation(..)
-  , attestationDigest
     -- P4 Structure
   , BlockHeader(..)
   , Block(..)
@@ -21,24 +20,19 @@ module Sanctum.Types
   , tDocument
   ) where
 
-import           Data.Word     (Word64)
-import           Sanctum.Crypto (Hash, Identity, Sig, hashConcat, digestText, unHash, unIdentity)
+import           Sanctum.Crypto (Hash, Identity, Sig)
 
 -- P1 · Truth/Being: a Fact is the existence of a document (its digest).
 newtype Fact = Fact { factDigest :: Hash } deriving (Eq, Ord, Show)
 
 -- P3 · Connection: an attestation binds author ↔ fact ↔ time by a sig.
+-- (The digest its signature covers is 'Sanctum.Crypto.attestationDigest'.)
 data Attestation = Attestation
   { attAuthor      :: Identity
   , attFact        :: Fact
   , attClaimedTime :: Integer
   , attSig         :: Sig
   } deriving (Eq, Show)
-
--- The digest an attestation's signature covers: author ‖ fact ‖ time.
-attestationDigest :: Identity -> Fact -> Integer -> Hash
-attestationDigest author (Fact fh) t =
-  hashConcat [ fromIntegral (unIdentity author), unHash fh, fromIntegral t ]
 
 -- P4 · Structure: a block header and block.
 data BlockHeader = BlockHeader

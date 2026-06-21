@@ -18,7 +18,7 @@ module Sanctum.P3_Connection where
 open import Sanctum.P0_Void
 open import Sanctum.P1_Truth
 open import Sanctum.P2_Distinction
-open import Data.Nat using (ℕ)
+open import Data.Nat using (ℕ; _+_)
 
 -- A hospital's timestamped, signed attestation that a document exists.
 record Attestation : Set where
@@ -31,14 +31,10 @@ record Attestation : Set where
 
 open Attestation public
 
--- The payload an attestation's signature must cover: author ‖ digest ‖ time.
--- (Modelled abstractly; the node hashes the canonical encoding.)
+-- The payload an attestation's signature must cover: author ‖ digest ‖
+-- time.  The committed digest depends on ALL THREE fields, matching the
+-- Haskell node's `Sanctum.Crypto.attestationDigest` (which is a
+-- collision-resistant hash of their canonical encoding; here the model
+-- combines them with +, since Hash is an opaque ℕ).
 attestationDigest : Attestation → Hash
-attestationDigest a = digest (document a) -- representative; real node binds all fields
-
--- A hash link to a parent (zeroHash links genesis to the void).
-record Link : Set where
-  constructor link
-  field parent : Hash
-
-open Link public
+attestationDigest a = author a + digest (document a) + claimedTime a

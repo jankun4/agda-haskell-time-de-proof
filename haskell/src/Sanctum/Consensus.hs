@@ -52,6 +52,6 @@ finalise vs epoch chain payload votes =
                      , qcSignatures = sigs
                      }
       block      = Block header payload
-  in if not (quorumReached (faultBudget vs) signersVec)
-       then Left "no quorum: fewer than 2f+1 validators endorsed the block"
+  in if not (quorumReached (validatorCount vs) (faultBudget vs) signersVec)
+       then Left "no quorum: fewer than n-f validators endorsed the block"
        else (\c -> (c, block, cert)) <$> appendBlock chain block

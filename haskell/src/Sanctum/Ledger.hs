@@ -20,9 +20,9 @@ module Sanctum.Ledger
   , adoptValidatorSet
   ) where
 
-import           Data.List      (elemIndex)
+import           Data.List      (elemIndex, nub)
 import           Sanctum.Crypto
-import           Sanctum.Core   (quorumReached, countTrue)
+import           Sanctum.Core   (quorumThreshold)
 import           Sanctum.Types
 
 ----------------------------------------------------------------------
@@ -44,7 +44,17 @@ headHash (b : _) = headerHash (blkHeader b)
 
 -- | A Merkle leaf for an attestation = the digest its signature covers.
 attestationLeaf :: Attestation -> Hash
-attestationLeaf a = attestationDigest (attAuthor a) (attFact a) (attClaimedTime a)
+attestationLeaf a =
+  attestationDigest (attAuthor a) (factDigest (attFact a)) (attClaimedTime a)
+
+-- | The number of DISTINCT validator-set members whose signature over
+--   @msg@ verifies.  Quorum decisions count THIS, never a self-declared
+--   boolean vector — so a certificate cannot claim signatures it lacks.
+countValidSigners :: ValidatorSet -> Hash -> [(Identity, Sig)] -> Int
+countValidSigners vs msg sigs =
+  length (nub [ idn | (idn, s) <- sigs
+                    , idn `elem` vsetMembers vs
+                    , verify idn msg s ])
 
 ----------------------------------------------------------------------
 -- Merkle tree (duplicate-last for odd levels)
@@ -122,38 +132,39 @@ buildTestament vs blk cert att =
 
 -- | Verify a Testament using ONLY the testament itself (no network).
 --   Requires the *expected* validator set (anchored to genesis lineage);
---   in the air-gapped setting the recipient is provisioned with it once.
+--   in the air-gapped setting the recipient is provisioned with it once
+--   (see docs/threat-model.md for the onboarding ceremony this assumes).
 --
 --   Checks, in order:
---     1. the document's leaf is included under the header's Merkle root;
---     2. ≥ 2f+1 distinct members signed the block header (quorum);
---     3. every certificate signature verifies under a member's key.
+--     1. the author actually signed the attestation (author authenticity);
+--     2. the attestation's leaf is included under the header's Merkle root;
+--     3. ≥ n−f DISTINCT members signed the block header, counted from
+--        *verified* signatures (not the certificate's boolean vector).
 --   On success, returns the proven timestamp.
 verifyTestament :: ValidatorSet -> Testament -> Either String Integer
 verifyTestament expected t
   | tValidators t /= expected =
       Left "validator set does not match the trusted (genesis-anchored) set"
+  | not authorSigned =
+      Left "author signature on the attestation is invalid"
   | not inclusion =
       Left "Merkle inclusion failed: document not in the block"
-  | not (quorumReached f signersVec) =
-      Left "quorum not reached: fewer than 2f+1 signatures"
-  | not allSigsValid =
-      Left "a certificate signature failed verification"
-  | not signersAreMembers =
-      Left "a signature came from a non-member"
+  | validSigners < quorumThreshold n f =
+      Left ("quorum not reached: only " ++ show validSigners
+            ++ " verified signatures, need " ++ show (quorumThreshold n f))
   | otherwise = Right (hdrBlockTime (tHeader t))
   where
-    vs          = tValidators t
-    f           = faultBudget vs
-    cert        = tCert t
-    -- recompute the exact committed leaf from the carried attestation
-    leaf        = attestationLeaf (tAttestation t)
-    inclusion   = merkleVerify leaf (tLeafIndex t)
-                               (tMerklePath t) (hdrMerkleRoot (tHeader t))
-    signersVec  = qcSigners cert
-    hHash       = headerHash (tHeader t)
-    allSigsValid      = all (\(idn, s) -> verify idn hHash s) (qcSignatures cert)
-    signersAreMembers = all (\(idn, _) -> idn `elem` vsetMembers vs) (qcSignatures cert)
+    vs           = tValidators t
+    n            = validatorCount vs
+    f            = faultBudget vs
+    att          = tAttestation t
+    leaf         = attestationLeaf att
+    authorSigned = verify (attAuthor att) leaf (attSig att)
+    inclusion    = merkleVerify leaf (tLeafIndex t)
+                                (tMerklePath t) (hdrMerkleRoot (tHeader t))
+    -- the quorum is counted from signatures that actually verify over the
+    -- header — the certificate's qcSigners vector is NOT trusted here.
+    validSigners = countValidSigners vs (headerHash (tHeader t)) (qcSignatures (tCert t))
 
 -- | The time a Testament proves the document existed by.
 provenTime :: Testament -> Integer
@@ -163,18 +174,43 @@ provenTime = hdrBlockTime . tHeader
 -- Reconfiguration (Principle 5: the network grows)
 ----------------------------------------------------------------------
 
--- | Adopt a new validator set, but only if a quorum of the CURRENT set
---   certifies it.  This is the on-ledger reconfiguration; the resulting
---   authority lineage back to genesis is what 'Sanctum.Proofs.Append'
---   (authorised→lineage) guarantees.
+-- | Adopt a new validator set.  A reconfiguration is accepted only when a
+--   quorum of the CURRENT set has *signed* a certificate that commits to
+--   exactly the proposed members and the target epoch — so a stale or
+--   forged certificate cannot install attacker validators (the central
+--   reconfiguration attack).  Continuity is enforced so authority cannot
+--   be handed off wholesale in one hop:
+--
+--     * the target epoch must be the immediate successor;
+--     * the new set must satisfy n ≥ 3f+1;
+--     * a quorum of the current set must persist into the new set
+--       (no evicting more than f trusted members at once);
+--     * the fault budget may rise by at most one per reconfiguration.
+--
+--   This is the concrete @Approves@ relation behind the abstract lineage
+--   theorem in 'Sanctum.Proofs.Append'.
 adoptValidatorSet
-  :: ValidatorSet     -- ^ current set
-  -> QuorumCert       -- ^ current set's certificate over the new set
-  -> ValidatorSet     -- ^ proposed new set
+  :: Int               -- ^ current epoch
+  -> ValidatorSet      -- ^ current set
+  -> [(Identity, Sig)] -- ^ current members' signatures over the reconfig digest
+  -> Int               -- ^ target epoch (must be current + 1)
+  -> ValidatorSet      -- ^ proposed new set
   -> Either String ValidatorSet
-adoptValidatorSet current cert proposed
-  | not (quorumReached (faultBudget current) (qcSigners cert)) =
-      Left "reconfiguration rejected: current set did not reach quorum"
+adoptValidatorSet currentEpoch current sigs toEpoch proposed
+  | toEpoch /= currentEpoch + 1 =
+      Left "reconfiguration rejected: target epoch must be current + 1"
   | not (wellFormedVSet proposed) =
       Left "reconfiguration rejected: new set violates n >= 3f+1"
+  | faultBudget proposed > faultBudget current + 1 =
+      Left "reconfiguration rejected: fault budget raised too fast"
+  | overlap < quorumThreshold (validatorCount current) (faultBudget current) =
+      Left "reconfiguration rejected: a quorum of the current set must remain"
+  | validSigners < quorumThreshold (validatorCount current) (faultBudget current) =
+      Left ("reconfiguration rejected: only " ++ show validSigners
+            ++ " verified current-member signatures, need "
+            ++ show (quorumThreshold (validatorCount current) (faultBudget current)))
   | otherwise = Right proposed
+  where
+    msg          = reconfigDigest (vsetMembers proposed) toEpoch (faultBudget proposed)
+    validSigners = countValidSigners current msg sigs
+    overlap      = length (filter (`elem` vsetMembers current) (vsetMembers proposed))

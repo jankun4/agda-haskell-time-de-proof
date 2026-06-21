@@ -20,7 +20,9 @@ Bytes : Set
 Bytes = List ℕ
 
 -- A cryptographic digest, modelled as an opaque identifier.  The proofs
--- treat it abstractly; the node computes real BLAKE2b/SHA-256 digests.
+-- treat it abstractly; the node ships a DEMO FNV digest behind a
+-- swappable interface (replace with BLAKE2b/SHA-256 in production —
+-- see docs/threat-model.md).
 Hash : Set
 Hash = ℕ
 

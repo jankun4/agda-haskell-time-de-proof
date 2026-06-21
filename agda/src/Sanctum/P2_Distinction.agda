@@ -6,10 +6,12 @@
 -- distinguishes the true author of a fact from a forger.
 --
 -- The cryptographic verifier is modelled as an abstract relation
--- `Signed pk h` ("the holder of pk signed digest h").  Its security
+-- `Verifies pk h s` ("signature s by pk attests digest h").  Its security
 -- assumptions (correctness + unforgeability) are documented in
--- docs/threat-model.md and are honoured by the Ed25519 backend in the
--- Haskell node.  We reason about the protocol on top of this interface.
+-- docs/threat-model.md and are honoured by the signature backend in the
+-- Haskell node — a DEMO textbook-Schnorr scheme behind a swappable
+-- interface (replace with Ed25519 in production).  We reason about the
+-- protocol on top of this interface.
 ------------------------------------------------------------------------
 
 {-# OPTIONS --safe #-}

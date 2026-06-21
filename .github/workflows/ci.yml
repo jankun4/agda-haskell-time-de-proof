@@ -1,0 +1,55 @@
+name: ci
+
+# Enforces the project's whole value proposition on every push: the Agda
+# theses type-check, the kernel extracts to Haskell, and the node builds
+# and passes its tests.
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+env:
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+
+jobs:
+  agda:
+    name: Agda — type-check theses & extract kernel
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Agda, stdlib, GHC, cabal
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y agda agda-stdlib ghc cabal-install
+      - name: Register the standard library
+        run: |
+          printf 'name: standard-library\ninclude: .\n' \
+            | sudo tee /usr/share/agda-stdlib/standard-library.agda-lib >/dev/null
+          mkdir -p ~/.agda
+          echo /usr/share/agda-stdlib/standard-library.agda-lib > ~/.agda/libraries
+          echo standard-library > ~/.agda/defaults
+      - name: Type-check every thesis (scripts/check.sh)
+        run: ./scripts/check.sh
+      - name: Generate Haskell from the kernel and run it (scripts/extract.sh)
+        run: ./scripts/extract.sh
+
+  node:
+    name: Haskell — build & test the node
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GHC & cabal
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ghc cabal-install
+      - name: Build
+        working-directory: haskell
+        run: cabal build all
+      - name: Test
+        working-directory: haskell
+        run: cabal run sanctum-test
+      - name: Demo (smoke)
+        working-directory: haskell
+        run: cabal run sanctum-node

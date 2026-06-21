@@ -26,8 +26,11 @@ Sanctum delivers that with:
   reconfiguration recorded on the ledger itself.
 
 The non-negotiable theses live in [`agda/`](agda/) and are checked by Agda. The
-running node lives in [`haskell/`](haskell/); its kernel is **generated from the
-Agda** so that what runs is what was proven.
+running node lives in [`haskell/`](haskell/); its security-critical kernel
+**mirrors** the Agda kernel and **can be generated from it** (`scripts/extract.sh`,
+verified in CI). What is and isn't yet mechanically tied together is stated
+plainly in [`docs/limitations.md`](docs/limitations.md) — please read it before
+trusting any claim here.
 
 ---
 
@@ -55,15 +58,18 @@ the actual module/dependency stack of the codebase. See
 | Thesis | Principle | Statement | File |
 |--------|-----------|-----------|------|
 | Append-only | 4 Structure | Extending a valid chain preserves all prior history; genesis is fixed. | [`Append.agda`](agda/src/Sanctum/Proofs/Append.agda) |
-| Quorum intersection | 5 Life | Any two quorums of a `3f+1` validator set share an **honest** member ⇒ no two conflicting blocks finalise at one height (**Agreement**). | [`Quorum.agda`](agda/src/Sanctum/Proofs/Quorum.agda) |
-| BFT time soundness | 6 Harmony | If `> f` of `2f+1` validator clocks lie in `[lo,hi]`, the agreed **median ∈ [lo,hi]** — the timestamp is bounded by honest reality. | [`Time.agda`](agda/src/Sanctum/Proofs/Time.agda) |
-| Contract totality | 6 Harmony | The on-chain evaluator is **total** ⇒ every contract halts ⇒ **no gas is needed**. (The Agda termination checker accepting it *is* the proof.) | [`Totality.agda`](agda/src/Sanctum/Proofs/Totality.agda) |
+| Quorum intersection | 5 Life | Any two quorums (each of size `q`, with `2q ≥ n+f+1`) share an **honest** member. This holds for the deployment rule `q = n−f` whenever `n ≥ 3f+1`, so it covers sets with `n > 3f+1` — which a fixed `2f+1` threshold would break. | [`Quorum.agda`](agda/src/Sanctum/Proofs/Quorum.agda) |
+| Agreement | 5/6 | From the above: two finalised blocks at one height coincide — *given* honest validators don't equivocate (that premise is assumed, not yet proved; see limitations). | [`P6_Harmony.agda`](agda/src/Sanctum/P6_Harmony.agda) |
+| BFT time soundness | 6 Harmony | If `> f` of the validator clocks lie in `[lo,hi]`, any value with the **median property** lies in `[lo,hi]`. (That the running `medianTime` *has* that property is tested, not yet proved — see limitations.) | [`Time.agda`](agda/src/Sanctum/Proofs/Time.agda) |
+| Contract totality | 6 Harmony | The executed evaluator `runContract` is a **total** Agda function ⇒ every contract halts ⇒ **no gas is needed**. (`Totality.agda` additionally proves a fully-expressive STLC total, showing the technique scales.) | [`Kernel.agda`](agda/src/Sanctum/Kernel.agda), [`Totality.agda`](agda/src/Sanctum/Proofs/Totality.agda) |
 | Reconfiguration safety | 5 Life | A new validator set is adopted only with a quorum certificate from the *previous* set ⇒ unbroken chain of authority from genesis. | [`Append.agda`](agda/src/Sanctum/Proofs/Append.agda) |
 
 The cryptographic primitives (collision-resistant hashing, unforgeable signatures)
-are modelled as an **abstract interface with stated assumptions** (postulates).
-We prove the *protocol* correct on top of those assumptions — we do not re-prove
-cryptography. See [`docs/threat-model.md`](docs/threat-model.md).
+are modelled as an **abstract interface with stated assumptions**. We prove the
+*protocol* correct on top of those assumptions — we do not re-prove cryptography,
+and the bundled implementation is a **demo** (see [`docs/threat-model.md`](docs/threat-model.md)).
+The precise boundary between proved and assumed is in
+[`docs/limitations.md`](docs/limitations.md).
 
 ---
 
@@ -83,21 +89,29 @@ agda/                     Agda library "sanctum" (proofs + extractable kernel)
     Proofs/               the machine-checked theses
   Everything.agda         typecheck entry point
 haskell/                  the node (Cabal project "sanctum-node")
-  src/                    node shell: networking, storage, gossip, CLI glue
-  app/Main.hs             node + demo executable
+  src/Sanctum/            Crypto, Core (kernel mirror), Types, Ledger,
+                          Consensus, Node — the verified core + thin glue
+  app/Main.hs             the hospital-network demo executable
+  test/Spec.hs            unit + property tests (incl. council regressions)
   gen/                    Haskell generated from agda/Kernel.agda (MAlonzo)
-  test/
-docs/                     architecture, principles, threat model, timestamping
+docs/                     architecture, seven-principles, timestamping,
+                          threat-model, limitations
 scripts/                  check.sh (typecheck), extract.sh (Agda→Haskell)
+.github/workflows/ci.yml  CI: type-check + extract + build + test
+LICENSE                   BSD-3-Clause
 ```
 
 ## Build
 
 ```sh
-scripts/check.sh      # type-check every Agda thesis  (needs: agda + agda-stdlib)
-scripts/extract.sh    # generate haskell/gen/ from the Agda kernel
-cd haskell && cabal build && cabal run sanctum-node -- demo
+scripts/check.sh                       # type-check every Agda thesis (needs agda + agda-stdlib)
+scripts/extract.sh                     # generate haskell/gen/ from the Agda kernel and run it
+cd haskell && cabal build              # build the node
+cabal run sanctum-test                 # run the test-suite
+cabal run sanctum-node                 # run the hospital-network demo
 ```
+
+(Or `make check`, `make extract`, `make build`, `make test`, `make demo`.)
 
 See [`docs/architecture.md`](docs/architecture.md) for the full picture and
 [`docs/timestamping.md`](docs/timestamping.md) for *why* the time proof is

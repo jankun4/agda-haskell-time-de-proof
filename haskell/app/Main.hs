@@ -40,8 +40,9 @@ main = do
 
   ----------------------------------------------------------------
   section "2·Distinction — signatures distinguish the true author"
-  let goodSig = verify (attAuthor consent) (attestationDigest (attAuthor consent) (attFact consent) (attClaimedTime consent)) (attSig consent)
-      forged  = verify (hId mercy) (attestationDigest (attAuthor consent) (attFact consent) (attClaimedTime consent)) (attSig consent)
+  let consentDigest = attestationDigest (attAuthor consent) (factDigest (attFact consent)) (attClaimedTime consent)
+      goodSig = verify (attAuthor consent) consentDigest (attSig consent)
+      forged  = verify (hId mercy)         consentDigest (attSig consent)
   putStrLn ("St Mary's signature verifies     : " ++ show goodSig)
   putStrLn ("same sig under Mercy's key (forge): " ++ show forged ++ "  (correctly rejected)")
 
@@ -86,12 +87,14 @@ main = do
       newSet = ValidatorSet
         { vsetMembers = vsetMembers validators ++ [hId riverside]
         , vsetFault   = 1 }                       -- n=5 ≥ 3f+1 ✓
-      -- the CURRENT set certifies the change (all four endorse)
-      reconfigCert = QuorumCert
-        { qcSigners    = [True, True, True, True]
-        , qcSamples    = []
-        , qcSignatures = [] }
-  adopted <- expect (adoptValidatorSet validators reconfigCert newSet)
+      -- the CURRENT set SIGNS a certificate committing to the new set and
+      -- the target epoch (a quorum, n−f = 3, of St Mary/General/St Luke's)
+      reconfigMsg = reconfigDigest (vsetMembers newSet) 1 (vsetFault newSet)
+      reconfigSigs =
+        [ (hId stMary,  sign (hSecret stMary)  reconfigMsg)
+        , (hId general, sign (hSecret general) reconfigMsg)
+        , (hId stLukes, sign (hSecret stLukes) reconfigMsg) ]
+  adopted <- expect (adoptValidatorSet 0 validators reconfigSigs 1 newSet)
   putStrLn ("new validator set adopted; members = " ++ show (length (vsetMembers adopted)))
   -- A second round under the new set (epoch 1), now with Riverside voting.
   let votes2 =

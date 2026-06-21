@@ -20,6 +20,8 @@ module Sanctum.Crypto
   , digestBytes
   , digestText
   , hashConcat
+  , attestationDigest
+  , reconfigDigest
   , zeroHash
   , keypair
   , sign
@@ -29,7 +31,7 @@ module Sanctum.Crypto
 import           Data.Bits          (xor, (.&.))
 import qualified Data.ByteString    as BS
 import           Data.ByteString    (ByteString)
-import           Data.Word          (Word64)
+import           Data.Word          (Word64, Word8)
 import qualified Data.Text          as T
 import           Data.Text          (Text)
 import           Data.Text.Encoding (encodeUtf8)
@@ -60,11 +62,30 @@ digestBytes = Hash . fnv1a
 digestText :: Text -> Hash
 digestText = digestBytes . encodeUtf8
 
+-- Little-endian 8-byte encoding, shared by every field-commitment below.
+le64 :: Integral a => a -> [Word8]
+le64 w = [ fromIntegral ((toInteger w `div` (256 ^ i)) .&. 0xff) | i <- [0..7::Int] ]
+
 -- | Combine several digests/words into one (domain-separated), used to
 --   bind together the fields an attestation or header commits to.
 hashConcat :: [Word64] -> Hash
-hashConcat = digestBytes . BS.pack . concatMap bytesOf
-  where bytesOf w = [ fromIntegral ((w `div` (256 ^ i)) .&. 0xff) | i <- [0..7::Int] ]
+hashConcat = digestBytes . BS.pack . concatMap le64
+
+-- | The digest an attestation's signature must cover: author ‖ fact ‖ time.
+--   (Lives here, next to 'hashConcat', because it is cryptographic
+--   commitment logic — not a data type.)
+attestationDigest :: Identity -> Hash -> Integer -> Hash
+attestationDigest author factHash t =
+  hashConcat [ fromIntegral (unIdentity author), unHash factHash, fromIntegral t ]
+
+-- | The digest a reconfiguration certificate must cover: it binds the
+--   proposed members, the target epoch, and the proposed fault budget, so
+--   a signature authorising one reconfiguration cannot be replayed for
+--   another set or epoch.
+reconfigDigest :: [Identity] -> Int -> Int -> Hash
+reconfigDigest members toEpoch fault =
+  hashConcat (map (fromIntegral . unIdentity) members
+              ++ [fromIntegral toEpoch, fromIntegral fault])
 
 ----------------------------------------------------------------------
 -- Signatures: textbook Schnorr over a small fixed prime (DEMO).
@@ -104,8 +125,7 @@ keypair seed =
   in (Identity (modexp gen sk prime), SecretKey sk)
 
 hOf :: [Integer] -> Integer
-hOf xs = toInteger (fnv1a (BS.pack (concatMap b8 xs))) `mod` order
-  where b8 x = [ fromIntegral ((x `div` (256 ^ i)) .&. 0xff) | i <- [0..7::Int] ]
+hOf xs = toInteger (fnv1a (BS.pack (concatMap le64 xs))) `mod` order
 
 -- | Sign a digest with a secret key (deterministic-nonce Schnorr).
 sign :: SecretKey -> Hash -> Sig

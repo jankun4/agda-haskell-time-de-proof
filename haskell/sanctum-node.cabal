@@ -9,11 +9,12 @@ description:
   (see @../scripts/extract.sh@).  The proofs justifying that core live in
   @../agda/src/Sanctum/Proofs/@.
 license:            BSD-3-Clause
-author:             Sanctum
+license-file:       LICENSE
+author:             Sanctum contributors
 build-type:         Simple
 
 common warnings
-  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing
+  ghc-options: -Wall -Wno-name-shadowing
 
 library
   import:           warnings

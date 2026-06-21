@@ -51,15 +51,38 @@ Hash-linking gives the complementary lower bound (a block cannot precede its
 parent), so a document's existence is sandwiched between its block's time
 and that of any later block that refers to it.
 
-## Honesty about assumptions
+## Consistency, not absolute time — read this carefully
 
-- **Clock synchrony of honest nodes.** We assume honest validators are
-  loosely synchronised (the `[lo,hi]` interval). This is standard and easily
-  met on a hospital LAN with NTP; the *width* of `[lo,hi]` is the
-  granularity of the guarantee.
-- **`n ≥ 3f+1`.** Enforced when a validator set is adopted
-  (`wellFormedVSet`). With more Byzantine validators than `f`, neither
-  agreement nor the time bound holds — this is fundamental to BFT, not a
-  Sanctum limitation.
-- **Cryptography.** Digests and signatures are assumed collision-resistant
-  and unforgeable; see [threat-model.md](threat-model.md).
+The theorem bounds the median by the **honest validators' own clock
+interval** `[lo,hi]`. It does **not** prove that `[lo,hi]` reflects true
+wall-clock time. So the guarantee is a **consistency** property — *a
+Byzantine minority cannot drag the timestamp outside the honest cluster* —
+**not** an absolute-time **correctness** property.
+
+Concretely, the **NTP attack**: if an adversary shifts the time source that
+the honest validators share (a compromised LAN NTP server, a rogue DHCP-
+supplied server, route manipulation), *all* honest clocks move together,
+`[lo,hi]` shifts wholesale, and a document is finalised with a timestamp
+hours off — and the proof still holds, because the honest nodes still agree.
+The median resists a corrupted *minority of clocks*, never a corrupted
+*shared clock source*. Mitigations (mandatory for any real deployment):
+
+- validators must sit in **different hospitals / different NTP domains** —
+  if they all share one LAN clock, the BFT time assumption collapses to a
+  single point of failure;
+- use **authenticated time** (NTS/GPS) and have validators **cross-check**:
+  reject a round whose median deviates from one's own clock beyond a bound;
+- treat a Testament's time as a **window `±` the honest clock spread**, not
+  a point — that spread is the stated granularity of the guarantee.
+
+## Other assumptions
+
+- **`n ≥ 3f+1`** and **quorum `= n−f`.** Enforced when a validator set is
+  adopted (`wellFormedVSet`) and when a block is finalised. With more than
+  `f` Byzantine validators, neither agreement nor the time bound holds —
+  fundamental to BFT, not a Sanctum limitation.
+- **Positive evidence only.** A Testament proves *existence by* a time. The
+  *absence* of a Testament proves nothing (it may have been censored).
+- **Median-existence is tested, not yet proved**, and the bundled crypto is
+  a demo — see [limitations.md](limitations.md) and
+  [threat-model.md](threat-model.md).

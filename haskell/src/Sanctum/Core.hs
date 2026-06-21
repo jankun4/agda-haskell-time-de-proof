@@ -32,12 +32,15 @@ module Sanctum.Core
 countTrue :: [Bool] -> Int
 countTrue = length . filter id
 
--- | A quorum needs at least 2·f + 1 signatures.
-quorumThreshold :: Int -> Int
-quorumThreshold f = 2 * f + 1
+-- | A quorum needs "all but f" of the n validators: n − f signatures.
+--   At n = 3f+1 this is the classic 2f+1; for n > 3f+1 it scales so that
+--   any two quorums still intersect in an honest validator (the proof
+--   obligation 2q ≥ n+f+1 holds for q = n−f exactly when n ≥ 3f+1).
+quorumThreshold :: Int -> Int -> Int
+quorumThreshold n f = n - f
 
-quorumReached :: Int -> [Bool] -> Bool
-quorumReached f signers = countTrue signers >= quorumThreshold f
+quorumReached :: Int -> Int -> [Bool] -> Bool
+quorumReached n f signers = countTrue signers >= quorumThreshold n f
 
 ----------------------------------------------------------------------
 -- BFT median time  (mirror of Sanctum.Kernel.medianTime)

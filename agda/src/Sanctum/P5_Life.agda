@@ -19,7 +19,7 @@ module Sanctum.P5_Life where
 
 open import Sanctum.P0_Void
 open import Sanctum.P2_Distinction
-open import Data.Nat using (ℕ; _≤_)
+open import Data.Nat using (ℕ; _≤_; _∸_)
 open import Data.Bool using (Bool)
 open import Data.Vec using (Vec)
 
@@ -48,12 +48,19 @@ record QuorumCert (n : ℕ) : Set where
 
 open QuorumCert public
 
--- A quorum is reached when at least 2·fault+1 validators signed.
+-- A quorum needs "all but f" signatures: at least  n − f  of the n
+-- members.  At n = 3f+1 this is the classic 2f+1; for n > 3f+1 it scales
+-- so that quorum intersection still yields an honest validator (see
+-- `Sanctum.Proofs.Quorum`, whose obligation 2q ≥ n+f+1 holds for q = n−f
+-- exactly when n ≥ 3f+1).
+quorumThreshold : ValidatorSet → ℕ
+quorumThreshold vs = size vs ∸ fault vs
+
 IsQuorum : (vs : ValidatorSet) → QuorumCert (size vs) → Set
-IsQuorum vs c = Q.QuorumThreshold (fault vs) ≤ count (signers c)
+IsQuorum vs c = quorumThreshold vs ≤ count (signers c)
 
 -- Re-export the resistance theorem.
-open Q public using (quorum-intersection-honest; QuorumThreshold)
+open Q public using (quorum-intersection-honest)
 
 ------------------------------------------------------------------------
 -- Growth: a reconfiguration is approved when a quorum of the *current*
