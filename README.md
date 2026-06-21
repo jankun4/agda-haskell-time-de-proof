@@ -1,0 +1,1 @@
+# agda-haskell-time-de-proof
