@@ -84,8 +84,10 @@ this a non-issue:
 ## No gas, no fees
 
 There is no gas metering and no fee market. The reason is structural, not
-economic: the on-chain language is **total** — every program provably halts
-(`Proofs.Totality`; the Agda termination checker *is* the proof). Gas exists
+economic: the executed on-chain evaluator is **total** — `Kernel.runContract`
+is accepted by Agda's termination checker, which *is* the proof that every
+contract halts (`Proofs.Totality` separately proves a richer STLC total, as
+headroom — it is not the executed language). Gas exists
 in other systems only to bound otherwise-unbounded execution and to price
 it; with guaranteed termination and a permissioned (non-anonymous) validator
 set, neither is needed. Resource fairness is handled administratively

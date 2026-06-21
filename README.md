@@ -91,12 +91,12 @@ agda/                     Agda library "sanctum" (proofs + extractable kernel)
   Everything.agda         typecheck entry point
 haskell/                  the node (Cabal project "sanctum-node")
   src/Sanctum/            Crypto, Core (kernel mirror), Types, Ledger,
-                          Consensus, Node — the verified core + thin glue
+                          Consensus, Lineage, Node — the verified core + glue
   app/Main.hs             the hospital-network demo executable
   test/Spec.hs            unit + property tests (incl. council regressions)
   gen/                    Haskell generated from agda/Kernel.agda (MAlonzo)
 docs/                     architecture, seven-principles, timestamping,
-                          threat-model, limitations
+                          threat-model, limitations, roadmap
 scripts/                  check.sh (typecheck), extract.sh (Agda→Haskell)
 .github/workflows/ci.yml  CI: type-check + extract + build + test
 LICENSE                   BSD-3-Clause
@@ -114,6 +114,8 @@ cabal run sanctum-node                 # run the hospital-network demo
 
 (Or `make check`, `make extract`, `make build`, `make test`, `make demo`.)
 
-See [`docs/architecture.md`](docs/architecture.md) for the full picture and
-[`docs/timestamping.md`](docs/timestamping.md) for *why* the time proof is
-trustworthy without any external time authority.
+See [`docs/architecture.md`](docs/architecture.md) for the full picture,
+[`docs/timestamping.md`](docs/timestamping.md) for *why* the time guarantee
+holds (and its limits), [`docs/limitations.md`](docs/limitations.md) for the
+honest proved-vs-assumed boundary, and [`docs/roadmap.md`](docs/roadmap.md)
+for where the project is going (the transcendence backlog).

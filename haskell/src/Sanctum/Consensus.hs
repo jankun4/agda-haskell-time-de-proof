@@ -26,20 +26,26 @@ data Vote = Vote
 -- | Finalise a block from a set of votes.  Returns the extended chain,
 --   the new block, and its quorum certificate — or an error if no quorum.
 finalise
-  :: ValidatorSet
+  :: Integer        -- ^ maxSkew: tolerated spread of endorser clocks / claimed times
+  -> ValidatorSet
   -> Int            -- ^ epoch (index of this validator set)
   -> Chain
   -> [Attestation]  -- ^ payload sealed into the block
   -> [Vote]
   -> Either String (Chain, Block, QuorumCert)
-finalise vs epoch chain payload votes
+finalise maxSkew vs epoch chain payload votes
   | not (wellFormedVSet vs) =
       Left "validator set is malformed (distinct members & n >= 3f+1 required)"
+  | any (\a -> abs (attClaimedTime a - blockTime) > maxSkew) payload =
+      -- Bind each attestation's self-reported time to the BFT-agreed median
+      -- (which a Byzantine minority cannot move): an author cannot back/post-
+      -- date a document beyond maxSkew of consensus time.  (We do NOT bound
+      -- the spread of raw votes — that would let one Byzantine outlier DoS the
+      -- round; the median already tolerates outliers.  The NTP attack on the
+      -- honest majority's shared clock is out-of-protocol — see timestamping.md.)
+      Left "an attestation's claimed time is outside the agreed median window"
   | otherwise =
-  let endorsers  = filter voteSign votes
-      samples    = map voteClock endorsers
-      blockTime  = medianTime samples
-      mroot      = merkleRoot (map attestationLeaf payload)
+  let mroot      = merkleRoot (map attestationLeaf payload)
       header     = BlockHeader
                      { hdrParent     = headHash chain
                      , hdrMerkleRoot = mroot
@@ -58,3 +64,7 @@ finalise vs epoch chain payload votes
   in if not (quorumReached (validatorCount vs) (faultBudget vs) signersVec)
        then Left "no quorum: fewer than n-f validators endorsed the block"
        else (\c -> (c, block, cert)) <$> appendBlock chain block
+  where
+    endorsers = filter voteSign votes
+    samples   = map voteClock endorsers
+    blockTime = medianTime samples

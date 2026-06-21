@@ -20,6 +20,8 @@ module Sanctum.Crypto
   , digestBytes
   , digestText
   , hashConcat
+  , Domain(..)
+  , tagged
   , attestationDigest
   , reconfigDigest
   , zeroHash
@@ -66,17 +68,27 @@ digestText = digestBytes . encodeUtf8
 le64 :: Integral a => a -> [Word8]
 le64 w = [ fromIntegral ((toInteger w `div` (256 ^ i)) .&. 0xff) | i <- [0..7::Int] ]
 
--- | Combine several digests/words into one (domain-separated), used to
---   bind together the fields an attestation or header commits to.
+-- | Combine several words into one digest.
 hashConcat :: [Word64] -> Hash
 hashConcat = digestBytes . BS.pack . concatMap le64
+
+-- | Commitment domains.  Every structured commitment leads with a distinct
+--   domain code, so a value in one domain can never be reinterpreted as a
+--   value in another (structural domain separation — closes leaf/node and
+--   cross-commitment confusion by construction, not by luck).
+data Domain = DLeaf | DNode | DRoot | DHeader | DReconfig | DCharter
+  deriving (Eq, Show, Enum)
+
+-- | A domain-tagged commitment: @tagged d xs = H(code d ‖ xs)@.
+tagged :: Domain -> [Word64] -> Hash
+tagged d xs = hashConcat (fromIntegral (fromEnum d) : xs)
 
 -- | The digest an attestation's signature must cover: author ‖ fact ‖ time.
 --   (Lives here, next to 'hashConcat', because it is cryptographic
 --   commitment logic — not a data type.)
 attestationDigest :: Identity -> Hash -> Integer -> Hash
 attestationDigest author factHash t =
-  hashConcat [ fromIntegral (unIdentity author), unHash factHash, fromIntegral t ]
+  tagged DLeaf [ fromIntegral (unIdentity author), unHash factHash, fromIntegral t ]
 
 -- | The digest a reconfiguration certificate must cover.  It binds BOTH
 --   the source context (current members + current epoch) and the target
@@ -91,10 +103,11 @@ reconfigDigest
   -> Int         -- ^ proposed fault budget
   -> Hash
 reconfigDigest current fromEpoch proposed toEpoch fault =
-  hashConcat ( map (fromIntegral . unIdentity) current
-            ++ [0x5e]                                    -- domain separator
-            ++ map (fromIntegral . unIdentity) proposed
-            ++ [fromIntegral fromEpoch, fromIntegral toEpoch, fromIntegral fault])
+  tagged DReconfig
+       ( fromIntegral (length current) : map (fromIntegral . unIdentity) current
+      -- length-prefix separates the two variable-length member runs
+      ++ fromIntegral (length proposed) : map (fromIntegral . unIdentity) proposed
+      ++ [fromIntegral fromEpoch, fromIntegral toEpoch, fromIntegral fault])
 
 ----------------------------------------------------------------------
 -- Signatures: textbook Schnorr over a small fixed prime (DEMO).

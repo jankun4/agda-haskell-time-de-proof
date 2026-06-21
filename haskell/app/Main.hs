@@ -12,6 +12,7 @@ import           Sanctum.Core
 import           Sanctum.Types
 import           Sanctum.Ledger
 import           Sanctum.Consensus
+import           Sanctum.Lineage
 import           Sanctum.Node
 
 section :: String -> IO ()
@@ -59,7 +60,7 @@ main = do
         , Vote (hId stLukes) (hSecret stLukes) 1002   True
         , Vote (hId mercy)   (hSecret mercy)   999999 True ]   -- Byzantine
       payload = [consent, lab]
-  (chain1, blk1, cert1) <- expect (finalise validators 0 chain0 payload votes)
+  (chain1, blk1, cert1) <- expect (finalise 60 validators 0 chain0 payload votes)
   putStrLn ("median block time = " ++ show (hdrBlockTime (blkHeader blk1))
             ++ "  (Mercy's 999999 had no effect)")
   putStrLn ("chain height = " ++ show (length chain1))
@@ -72,6 +73,15 @@ main = do
   case verifyTestament validators testament of
     Right t  -> putStrLn ("  [ok] verified OFFLINE — document provably existed by t=" ++ show t)
     Left err -> putStrLn ("  unexpected failure: " ++ err) >> exitFailure
+  -- the clinic actually trusts a SIGNED founding charter, not a bare set,
+  -- and walks the (here empty) reconfiguration lineage from genesis.
+  let charterMsg = charterDigest validators
+      charter = Charter validators
+                  [ (hId hsp, sign (hSecret hsp) charterMsg)
+                  | hsp <- [stMary, general, stLukes, mercy] ]
+  case verifyTestamentFromCharter charter [] testament of
+    Right t  -> putStrLn ("  [ok] re-verified from the genesis-anchored CHARTER (t=" ++ show t ++ ")")
+    Left err -> putStrLn ("  unexpected charter failure: " ++ err) >> exitFailure
 
   ----------------------------------------------------------------
   section "tamper-evidence — altering the document breaks the proof"
@@ -105,7 +115,7 @@ main = do
         , Vote (hId stLukes)   (hSecret stLukes)   2002 True
         , Vote (hId riverside) (hSecret riverside) 2003 True ]
       payload2 = [ makeAttestation riverside "Riverside intake form #1" 2000 ]
-  (chain2, blk2, _) <- expect (finalise adopted 1 chain1 payload2 votes2)
+  (chain2, blk2, _) <- expect (finalise 60 adopted 1 chain1 payload2 votes2)
   putStrLn ("epoch-1 block time = " ++ show (hdrBlockTime (blkHeader blk2))
             ++ ", chain height = " ++ show (length chain2))
 

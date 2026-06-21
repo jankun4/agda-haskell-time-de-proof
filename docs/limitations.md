@@ -30,6 +30,14 @@ test*, not *by the build graph*.
 > `Proofs/Quorum.deployment-bound` and `P6_Harmony.Agreement` discharges
 > the quorum obligation from `wellFormedVSet` rather than assuming it.
 
+- **Positions vs parties (Agda↔Haskell seam).** The quorum proofs count
+  *positions* of a `Vec Bool n` (`Proofs/Counting.count`); the premise
+  `count (∁ h) ≤ f` is about dishonest *positions*. That each position is a
+  distinct real party — and so ≤ f dishonest *parties* — is enforced only on
+  the Haskell side (`wellFormedVSet` requires distinct members,
+  `countValidSigners` deduplicates verified identities). This bridge is sound
+  operationally but is asserted by hand, not mechanized; it is the same class
+  of gap as §1.
 - **Median existence.** `Proofs/Time.agda` proves: *if* a value has the
   median property (`IsMedian`), it lies within the honest clock interval.
   We do **not** yet prove that the executable `medianTime` (insertion sort
@@ -110,7 +118,23 @@ or a TSA.
 
 ## 6. Out of scope (engineering, not proofs)
 
-Networking, gossip, persistence, key custody/HSMs, rate-limiting, and a
-runnable light-client lineage verifier are **not implemented** — the `Node`
-module is an in-memory stand-in. Liveness/availability is the usual BFT
-partial-synchrony result and is not formally treated here.
+Networking, gossip, persistence, key custody/HSMs, and rate-limiting are
+**not implemented** — the `Node` module is an in-memory stand-in.
+Liveness/availability is the usual BFT partial-synchrony result and is not
+formally treated here.
+
+> **Now implemented (round 3):** the offline trust anchor. A verifier is
+> provisioned with a **signed founding `Charter`** (`Sanctum.Lineage`) and
+> checks a Testament with `verifyTestamentFromCharter`, which walks the
+> reconfiguration lineage from genesis — re-running `adoptValidatorSet` on
+> every step — so the trusted set is provably genesis-descended, offline.
+> This also removes the round-2 regression where a genesis-provisioned
+> verifier could not validate post-reconfiguration Testaments. (The
+> *abstract* Agda `Approves`/lineage theorem is still not mechanically tied
+> to this concrete walker — see §2.)
+
+## 7. Salting not implemented
+
+Document digests carry no salt, so low-entropy documents (a clinical-form
+template + a name) can be confirmed by brute force. `attestationDigest`
+needs an off-ledger nonce parameter before real use (see threat-model.md).

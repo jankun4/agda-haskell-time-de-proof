@@ -30,7 +30,7 @@ import           Sanctum.Types
 ----------------------------------------------------------------------
 
 headerHash :: BlockHeader -> Hash
-headerHash h = hashConcat
+headerHash h = tagged DHeader
   [ unHash (hdrParent h)
   , unHash (hdrMerkleRoot h)
   , fromIntegral (hdrBlockTime h)
@@ -67,7 +67,7 @@ countValidSigners vs msg sigs =
 ----------------------------------------------------------------------
 
 hpair :: Hash -> Hash -> Hash
-hpair a b = hashConcat [1, unHash a, unHash b]    -- node tag 1
+hpair a b = tagged DNode [unHash a, unHash b]
 
 -- root of the bare tree (duplicate-last for odd levels)
 bareRoot :: [Hash] -> Hash
@@ -81,7 +81,7 @@ bareRoot xs  = bareRoot (pairUp xs)
 
 -- | The count-bound Merkle root committed to in the header.
 merkleRoot :: [Hash] -> Hash
-merkleRoot xs = hashConcat [0, fromIntegral (length xs), unHash (bareRoot xs)]
+merkleRoot xs = tagged DRoot [fromIntegral (length xs), unHash (bareRoot xs)]
 
 -- | The sibling path proving leaf @i@'s membership.
 merklePath :: [Hash] -> Int -> [Hash]
@@ -102,13 +102,22 @@ safeAt xs i d = if i >= 0 && i < length xs then xs !! i else d
 
 -- | Recompute the count-bound root from a leaf, its index, the sibling
 --   path, and the total leaf count, then compare to the published root.
+--   Rejects structurally inconsistent witnesses up front (index in range,
+--   path depth matching the count) before trusting the root reproduction.
 merkleVerify :: Hash -> Int -> [Hash] -> Int -> Hash -> Bool
 merkleVerify leaf i path count root =
-  hashConcat [0, fromIntegral count, unHash (fold leaf i path)] == root
+     i >= 0 && i < count
+  && length path == treeDepth count
+  && tagged DRoot [fromIntegral count, unHash (fold leaf i path)] == root
   where
     fold h _ []           = h
     fold h j (sib : sibs) =
       fold (if even j then hpair h sib else hpair sib h) (j `div` 2) sibs
+
+-- depth of the duplicate-last binary tree over n leaves (0 for n ≤ 1)
+treeDepth :: Int -> Int
+treeDepth n = go n 0
+  where go k d = if k <= 1 then d else go ((k + 1) `div` 2) (d + 1)
 
 ----------------------------------------------------------------------
 -- Append-only chain validation
@@ -230,7 +239,7 @@ adoptValidatorSet currentEpoch current sigs toEpoch proposed
   | faultBudget proposed > faultBudget current + 1 =
       Left "reconfiguration rejected: fault budget raised too fast"
   | validatorCount proposed > validatorCount current + 1 =
-      Left "reconfiguration rejected: at most one member may join per epoch"
+      Left "reconfiguration rejected: validator set may grow by at most one (net) per epoch"
   | overlap < currentQuorum =
       Left "reconfiguration rejected: a quorum of the current set must remain"
   | validSigners < currentQuorum =

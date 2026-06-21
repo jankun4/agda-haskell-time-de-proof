@@ -5,8 +5,9 @@
 -- (rebellion / resistance) and it grows (life — new hospitals join).
 --
 --   * RESISTANCE: a block is final only with a quorum certificate of
---     ≥ 2f+1 validators.  Quorum intersection (Principle 5 proof) then
---     guarantees no two conflicting blocks can both be final.
+--     ≥ n−f validators (the classic 2f+1 at n=3f+1).  Quorum intersection
+--     (Principle 5 proof) then guarantees no two conflicting blocks can
+--     both be final.
 --
 --   * LIFE / GROWTH: the validator set evolves.  A new set is adopted
 --     only when a quorum of the current set approves it, so authority

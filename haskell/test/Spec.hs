@@ -14,6 +14,7 @@ import           Sanctum.Core
 import           Sanctum.Types
 import           Sanctum.Ledger
 import           Sanctum.Consensus
+import           Sanctum.Lineage
 import           Sanctum.Node
 
 check :: IORef Int -> String -> Bool -> IO ()
@@ -67,7 +68,7 @@ main = do
               , Vote (hId h2) (hSecret h2) 1001 True
               , Vote (hId hC) (hSecret hC) 1002 True
               , Vote (hId hD) (hSecret hD) 777  True ]
-  case finalise vs 0 [] [att] votes of
+  case finalise 50 vs 0 [] [att] votes of
     Left e -> c ("finalise round: " ++ e) False
     Right (chain, blk, cert) -> do
       c "block appended" (length chain == 1)
@@ -90,6 +91,28 @@ main = do
           let t3 = t { tAttestation = (tAttestation t) { attSig = sign (hSecret h2) (digestText "x") } }
           c "missing/forged author signature rejected"
             (either (const True) (const False) (verifyTestament vs t3))
+
+          -- ── R3: genesis-anchored lineage for offline verifiers ──────
+          let cmsg     = charterDigest vs
+              charter  = Charter vs [ (hId x, sign (hSecret x) cmsg) | x <- [h,h2,hC,hD] ]
+              badChart = Charter vs (drop 1 (charterSigs charter))   -- a founder didn't sign
+              attChart = let as = [ mkHospital ('z':show i) (100+i) | i <- [1..4] ]
+                             aset = ValidatorSet (map hId as) 1
+                         in Charter aset [ (hId x, sign (hSecret x) (charterDigest aset)) | x <- as ]
+          c "charter verifies (all founders signed)"
+            (verifyCharter charter == Right vs)
+          c "charter rejected when a founder didn't sign"
+            (either (const True) (const False) (verifyCharter badChart))
+          -- an epoch-0 Testament verifies from the genuine charter with no steps
+          c "Testament verifies from charter (epoch 0, no reconfig)"
+            (verifyTestamentFromCharter charter [] t == Right (hdrBlockTime (blkHeader blk)))
+          -- an attacker-provisioned charter (attacker keys) cannot validate it
+          c "attacker charter cannot validate a genuine Testament"
+            (either (const True) (const False) (verifyTestamentFromCharter attChart [] t))
+          -- lineage too short for a (hypothetical) later-epoch Testament is rejected
+          let tEp5 = t { tHeader = (tHeader t) { hdrEpoch = 5 } }
+          c "lineage too short for the Testament's epoch is rejected"
+            (either (const True) (const False) (verifyTestamentFromCharter charter [] tEp5))
 
   -- ── Reconfiguration safety (council C1/H5 + R2 hardening) ──────────
   let hE      = mkHospital "E" 5

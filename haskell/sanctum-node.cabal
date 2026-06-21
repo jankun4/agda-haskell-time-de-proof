@@ -27,6 +27,7 @@ library
       Sanctum.Types
       Sanctum.Ledger
       Sanctum.Consensus
+      Sanctum.Lineage
       Sanctum.Node
 
 executable sanctum-node
