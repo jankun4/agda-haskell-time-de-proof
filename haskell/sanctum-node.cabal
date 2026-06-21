@@ -1,0 +1,44 @@
+cabal-version:      2.4
+name:               sanctum-node
+version:            0.1.0.0
+synopsis:           Minimal BFT trusted-timestamping node for hospital networks.
+description:
+  The Haskell node for Sanctum.  Its security-critical core (quorum rule,
+  median block time, total contract evaluator) mirrors — and can be
+  literally generated from — the Agda kernel in @../agda/src/Sanctum/Kernel.agda@
+  (see @../scripts/extract.sh@).  The proofs justifying that core live in
+  @../agda/src/Sanctum/Proofs/@.
+license:            BSD-3-Clause
+author:             Sanctum
+build-type:         Simple
+
+common warnings
+  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing
+
+library
+  import:           warnings
+  hs-source-dirs:   src
+  default-language: Haskell2010
+  build-depends:    base, bytestring, containers, text
+  exposed-modules:
+      Sanctum.Crypto
+      Sanctum.Core
+      Sanctum.Types
+      Sanctum.Ledger
+      Sanctum.Consensus
+      Sanctum.Node
+
+executable sanctum-node
+  import:           warnings
+  hs-source-dirs:   app
+  main-is:          Main.hs
+  default-language: Haskell2010
+  build-depends:    base, bytestring, containers, text, sanctum-node
+
+test-suite sanctum-test
+  import:           warnings
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Spec.hs
+  default-language: Haskell2010
+  build-depends:    base, bytestring, containers, text, sanctum-node

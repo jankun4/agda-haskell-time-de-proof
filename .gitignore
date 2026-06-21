@@ -1,0 +1,18 @@
+# Agda
+**/*.agdai
+agda/_build/
+agda/MAlonzo/
+
+# Generated Haskell (regenerate with scripts/extract.sh)
+haskell/gen/
+
+# Haskell build
+haskell/dist-newstyle/
+dist-newstyle/
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+
+# misc
+/tmp/

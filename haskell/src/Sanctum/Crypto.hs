@@ -1,0 +1,129 @@
+-- | Principle 2 · Distinction — the cryptographic interface.
+--
+-- This module is the ONE place the system trusts cryptography.  It
+-- realises the abstract @Crypto@ interface from the Agda model
+-- (@Sanctum.P2_Distinction@): a digest and an *asymmetric*, publicly
+-- verifiable signature scheme.
+--
+-- ⚠  DEMO PARAMETERS.  The digest is an FNV-style hash and the signature
+--    is a textbook Schnorr scheme over a small fixed prime.  This is
+--    self-contained and dependency-free so the project builds and runs
+--    offline, and it is genuinely asymmetric (verification needs only the
+--    public key).  For production, swap the prime for a real group
+--    (Ed25519) and the digest for BLAKE2b/SHA-256.  Nothing else changes:
+--    the protocol proofs assume only this interface.
+module Sanctum.Crypto
+  ( Hash(..)
+  , Identity(..)
+  , SecretKey(..)
+  , Sig(..)
+  , digestBytes
+  , digestText
+  , hashConcat
+  , zeroHash
+  , keypair
+  , sign
+  , verify
+  ) where
+
+import           Data.Bits          (xor, (.&.))
+import qualified Data.ByteString    as BS
+import           Data.ByteString    (ByteString)
+import           Data.Word          (Word64)
+import qualified Data.Text          as T
+import           Data.Text          (Text)
+import           Data.Text.Encoding (encodeUtf8)
+
+----------------------------------------------------------------------
+-- Digests
+----------------------------------------------------------------------
+
+-- | A digest.  Modelled in Agda as @Hash = ℕ@.
+newtype Hash = Hash { unHash :: Word64 } deriving (Eq, Ord)
+
+instance Show Hash where show (Hash w) = "#" ++ show w
+
+-- | The hash of the void: parent of genesis (Agda 'zeroHash').
+zeroHash :: Hash
+zeroHash = Hash 0
+
+-- FNV-1a 64-bit (DEMO digest — not collision-resistant).
+fnv1a :: ByteString -> Word64
+fnv1a = BS.foldl' step 0xcbf29ce484222325
+  where step h b = (h `xor` fromIntegral b) * 0x100000001b3
+
+-- | Digest of an opaque octet string.
+digestBytes :: ByteString -> Hash
+digestBytes = Hash . fnv1a
+
+-- | Digest of UTF-8 text (documents are hashed this way in the demo).
+digestText :: Text -> Hash
+digestText = digestBytes . encodeUtf8
+
+-- | Combine several digests/words into one (domain-separated), used to
+--   bind together the fields an attestation or header commits to.
+hashConcat :: [Word64] -> Hash
+hashConcat = digestBytes . BS.pack . concatMap bytesOf
+  where bytesOf w = [ fromIntegral ((w `div` (256 ^ i)) .&. 0xff) | i <- [0..7::Int] ]
+
+----------------------------------------------------------------------
+-- Signatures: textbook Schnorr over a small fixed prime (DEMO).
+----------------------------------------------------------------------
+
+-- A 61-bit prime and a generator.  Toy size; replace with a real group.
+prime :: Integer
+prime = 2305843009213693951    -- 2^61 - 1 (a Mersenne prime)
+
+gen :: Integer
+gen = 37
+
+order :: Integer
+order = prime - 1              -- exponent modulus
+
+-- | Public identity = g^sk mod p.
+newtype Identity = Identity { unIdentity :: Integer } deriving (Eq, Ord)
+instance Show Identity where show (Identity x) = "id:" ++ show (x `mod` 100000)
+
+-- | Secret key (an exponent).
+newtype SecretKey = SecretKey Integer deriving (Eq, Ord, Show)
+
+-- | Schnorr signature (challenge, response).
+data Sig = Sig !Integer !Integer deriving (Eq, Ord)
+instance Show Sig where show (Sig e _) = "sig:" ++ show (e `mod` 100000)
+
+modexp :: Integer -> Integer -> Integer -> Integer
+modexp _ 0 _ = 1
+modexp b e m
+  | even e    = let h = modexp b (e `div` 2) m in (h * h) `mod` m
+  | otherwise = (b `mod` m) * modexp b (e - 1) m `mod` m
+
+-- | Deterministic keypair from a seed.
+keypair :: Word64 -> (Identity, SecretKey)
+keypair seed =
+  let sk = 1 + (toInteger (fnv1a (encodeUtf8 (T.pack (show seed)))) `mod` (order - 1))
+  in (Identity (modexp gen sk prime), SecretKey sk)
+
+hOf :: [Integer] -> Integer
+hOf xs = toInteger (fnv1a (BS.pack (concatMap b8 xs))) `mod` order
+  where b8 x = [ fromIntegral ((x `div` (256 ^ i)) .&. 0xff) | i <- [0..7::Int] ]
+
+-- | Sign a digest with a secret key (deterministic-nonce Schnorr).
+sign :: SecretKey -> Hash -> Sig
+sign (SecretKey sk) (Hash h) =
+  let m  = toInteger h
+      k  = 1 + (hOf [sk, m, 0xdead] `mod` (order - 1))
+      r  = modexp gen k prime
+      e  = hOf [r, m]
+      s  = (k + e * sk) `mod` order
+  in Sig e s
+{-# INLINE sign #-}
+
+-- | Verify a signature with only the public identity.
+--   Checks H(g^s · pk^(-e) ‖ m) == e.
+verify :: Identity -> Hash -> Sig -> Bool
+verify (Identity pk) (Hash h) (Sig e s) =
+  let m    = toInteger h
+      gpe  = modexp gen s prime
+      pke  = modexp pk ((order - e) `mod` order) prime   -- pk^(-e)
+      r'   = (gpe * pke) `mod` prime
+  in hOf [r', m] == e

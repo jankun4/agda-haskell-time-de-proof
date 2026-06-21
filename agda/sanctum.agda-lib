@@ -1,0 +1,3 @@
+name: sanctum
+include: src
+depend: standard-library
