@@ -16,3 +16,6 @@ dist-newstyle/
 
 # misc
 /tmp/
+
+# Claude Code local state and transient agent worktrees
+.claude/
