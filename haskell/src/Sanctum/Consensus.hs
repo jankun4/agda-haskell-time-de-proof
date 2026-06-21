@@ -3,7 +3,7 @@
 -- Validators vote on a proposed block: each contributes a clock sample
 -- and (if willing) a signature over the final header.  The block time is
 -- the MEDIAN of the samples — so a Byzantine minority cannot move it
--- (proved: Sanctum.Proofs.Time).  The block is finalised iff ≥ 2f+1
+-- (proved: Sanctum.Proofs.Time).  The block is finalised iff ≥ n−f
 -- members sign (proved safe: Sanctum.Proofs.Quorum).
 module Sanctum.Consensus
   ( Vote(..)
@@ -32,7 +32,10 @@ finalise
   -> [Attestation]  -- ^ payload sealed into the block
   -> [Vote]
   -> Either String (Chain, Block, QuorumCert)
-finalise vs epoch chain payload votes =
+finalise vs epoch chain payload votes
+  | not (wellFormedVSet vs) =
+      Left "validator set is malformed (distinct members & n >= 3f+1 required)"
+  | otherwise =
   let endorsers  = filter voteSign votes
       samples    = map voteClock endorsers
       blockTime  = medianTime samples

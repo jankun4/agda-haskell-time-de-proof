@@ -57,20 +57,31 @@ countValidSigners vs msg sigs =
                     , verify idn msg s ])
 
 ----------------------------------------------------------------------
--- Merkle tree (duplicate-last for odd levels)
+-- Merkle tree
+--
+-- The published root binds the LEAF COUNT (`merkleRoot`/`merkleVerify`
+-- fold over a bare tree, then domain-separate with the count).  This
+-- defeats the duplicate-last second-preimage (CVE-2012-2459): a tree of
+-- n leaves and one of n+1 with a duplicated tail no longer share a root,
+-- because their counts differ.
 ----------------------------------------------------------------------
 
 hpair :: Hash -> Hash -> Hash
-hpair a b = hashConcat [unHash a, unHash b]
+hpair a b = hashConcat [1, unHash a, unHash b]    -- node tag 1
 
-merkleRoot :: [Hash] -> Hash
-merkleRoot []  = zeroHash
-merkleRoot [x] = x
-merkleRoot xs  = merkleRoot (pairUp xs)
+-- root of the bare tree (duplicate-last for odd levels)
+bareRoot :: [Hash] -> Hash
+bareRoot []  = zeroHash
+bareRoot [x] = x
+bareRoot xs  = bareRoot (pairUp xs)
   where
     pairUp (a : b : rest) = hpair a b : pairUp rest
     pairUp [a]            = [hpair a a]
     pairUp []             = []
+
+-- | The count-bound Merkle root committed to in the header.
+merkleRoot :: [Hash] -> Hash
+merkleRoot xs = hashConcat [0, fromIntegral (length xs), unHash (bareRoot xs)]
 
 -- | The sibling path proving leaf @i@'s membership.
 merklePath :: [Hash] -> Int -> [Hash]
@@ -89,12 +100,15 @@ merklePath xs i
 safeAt :: [a] -> Int -> a -> a
 safeAt xs i d = if i >= 0 && i < length xs then xs !! i else d
 
--- | Recompute the root from a leaf, its index, and its sibling path.
-merkleVerify :: Hash -> Int -> [Hash] -> Hash -> Bool
-merkleVerify leaf _ [] root = leaf == root
-merkleVerify leaf i (sib : sibs) root =
-  let combined = if even i then hpair leaf sib else hpair sib leaf
-  in merkleVerify combined (i `div` 2) sibs root
+-- | Recompute the count-bound root from a leaf, its index, the sibling
+--   path, and the total leaf count, then compare to the published root.
+merkleVerify :: Hash -> Int -> [Hash] -> Int -> Hash -> Bool
+merkleVerify leaf i path count root =
+  hashConcat [0, fromIntegral count, unHash (fold leaf i path)] == root
+  where
+    fold h _ []           = h
+    fold h j (sib : sibs) =
+      fold (if even j then hpair h sib else hpair sib h) (j `div` 2) sibs
 
 ----------------------------------------------------------------------
 -- Append-only chain validation
@@ -128,6 +142,7 @@ buildTestament vs blk cert att =
       , tCert        = cert
       , tMerklePath  = merklePath (map attestationLeaf (blkAttestations blk)) i
       , tLeafIndex   = i
+      , tLeafCount   = length (blkAttestations blk)
       }
 
 -- | Verify a Testament using ONLY the testament itself (no network).
@@ -145,6 +160,8 @@ verifyTestament :: ValidatorSet -> Testament -> Either String Integer
 verifyTestament expected t
   | tValidators t /= expected =
       Left "validator set does not match the trusted (genesis-anchored) set"
+  | not (wellFormedVSet vs) =
+      Left "trusted validator set is malformed (distinct members & n >= 3f+1 required)"
   | not authorSigned =
       Left "author signature on the attestation is invalid"
   | not inclusion =
@@ -161,7 +178,7 @@ verifyTestament expected t
     leaf         = attestationLeaf att
     authorSigned = verify (attAuthor att) leaf (attSig att)
     inclusion    = merkleVerify leaf (tLeafIndex t)
-                                (tMerklePath t) (hdrMerkleRoot (tHeader t))
+                                (tMerklePath t) (tLeafCount t) (hdrMerkleRoot (tHeader t))
     -- the quorum is counted from signatures that actually verify over the
     -- header — the certificate's qcSigners vector is NOT trusted here.
     validSigners = countValidSigners vs (headerHash (tHeader t)) (qcSignatures (tCert t))
@@ -189,6 +206,13 @@ provenTime = hdrBlockTime . tHeader
 --
 --   This is the concrete @Approves@ relation behind the abstract lineage
 --   theorem in 'Sanctum.Proofs.Append'.
+--
+--   IMPORTANT (see docs/threat-model.md): these checks bound how *fast*
+--   membership can change and guarantee each step is quorum-authorised and
+--   anchored to genesis — but they do NOT guarantee the *honest fraction*
+--   is preserved.  A coalition that already holds a current quorum can
+--   migrate authority over several epochs; preventing that is an
+--   out-of-protocol governance responsibility, not a property proved here.
 adoptValidatorSet
   :: Int               -- ^ current epoch
   -> ValidatorSet      -- ^ current set
@@ -199,18 +223,26 @@ adoptValidatorSet
 adoptValidatorSet currentEpoch current sigs toEpoch proposed
   | toEpoch /= currentEpoch + 1 =
       Left "reconfiguration rejected: target epoch must be current + 1"
+  | not (wellFormedVSet current) =
+      Left "reconfiguration rejected: current set is malformed"
   | not (wellFormedVSet proposed) =
-      Left "reconfiguration rejected: new set violates n >= 3f+1"
+      Left "reconfiguration rejected: new set malformed (distinct members & n >= 3f+1)"
   | faultBudget proposed > faultBudget current + 1 =
       Left "reconfiguration rejected: fault budget raised too fast"
-  | overlap < quorumThreshold (validatorCount current) (faultBudget current) =
+  | validatorCount proposed > validatorCount current + 1 =
+      Left "reconfiguration rejected: at most one member may join per epoch"
+  | overlap < currentQuorum =
       Left "reconfiguration rejected: a quorum of the current set must remain"
-  | validSigners < quorumThreshold (validatorCount current) (faultBudget current) =
+  | validSigners < currentQuorum =
       Left ("reconfiguration rejected: only " ++ show validSigners
-            ++ " verified current-member signatures, need "
-            ++ show (quorumThreshold (validatorCount current) (faultBudget current)))
+            ++ " verified current-member signatures, need " ++ show currentQuorum)
   | otherwise = Right proposed
   where
-    msg          = reconfigDigest (vsetMembers proposed) toEpoch (faultBudget proposed)
-    validSigners = countValidSigners current msg sigs
-    overlap      = length (filter (`elem` vsetMembers current) (vsetMembers proposed))
+    currentQuorum = quorumThreshold (validatorCount current) (faultBudget current)
+    -- the signature binds the SOURCE (current members + epoch) and the
+    -- TARGET (proposed members + epoch + fault), so it cannot be replayed.
+    msg           = reconfigDigest (vsetMembers current) currentEpoch
+                                   (vsetMembers proposed) toEpoch (faultBudget proposed)
+    validSigners  = countValidSigners current msg sigs
+    -- distinct overlap only (both sets are well-formed ⇒ already distinct)
+    overlap       = length (filter (`elem` vsetMembers current) (vsetMembers proposed))

@@ -91,10 +91,10 @@ main = do
           c "missing/forged author signature rejected"
             (either (const True) (const False) (verifyTestament vs t3))
 
-  -- ── Reconfiguration safety (council C1/H5): signed + continuous ────
+  -- ── Reconfiguration safety (council C1/H5 + R2 hardening) ──────────
   let hE      = mkHospital "E" 5
-      newSet  = ValidatorSet (vsetMembers vs ++ [hId hE]) 1   -- n=5, f=1
-      msg     = reconfigDigest (vsetMembers newSet) 1 (vsetFault newSet)
+      newSet  = ValidatorSet (vsetMembers vs ++ [hId hE]) 1   -- n=5, f=1 (one join)
+      msg     = reconfigDigest (vsetMembers vs) 0 (vsetMembers newSet) 1 (vsetFault newSet)
       goodSigs = [ (hId h,  sign (hSecret h)  msg)
                  , (hId h2, sign (hSecret h2) msg)
                  , (hId hC, sign (hSecret hC) msg) ]            -- quorum (3 of 4)
@@ -107,10 +107,25 @@ main = do
     (either (const True) (const False) (adoptValidatorSet 0 vs [] 1 newSet))
   c "reconfig rejected: wrong target epoch"
     (either (const True) (const False) (adoptValidatorSet 0 vs goodSigs 5 newSet))
-  -- replay: signatures over a DIFFERENT set must not authorise this one
-  let otherMsgSigs = [ (hId h,  sign (hSecret h)  (reconfigDigest (vsetMembers vs) 1 1)) ]
-  c "reconfig rejected: signatures bound to a different set"
+  -- replay: signatures over a DIFFERENT source set must not authorise this
+  let otherMsgSigs = [ (hId h, sign (hSecret h)
+                          (reconfigDigest [hId h] 0 (vsetMembers newSet) 1 1)) ]
+  c "reconfig rejected: signatures bound to a different source set"
     (either (const True) (const False) (adoptValidatorSet 0 vs otherMsgSigs 1 newSet))
+  -- R2 regression: duplicate-identity padding must not pass continuity
+  let dupSet = ValidatorSet [hId h, hId h, hId h, hId hE, hId (mkHospital "F" 6)] 1
+      dupMsg = reconfigDigest (vsetMembers vs) 0 (vsetMembers dupSet) 1 1
+      dupSigs = [ (hId h, sign (hSecret h) dupMsg), (hId h2, sign (hSecret h2) dupMsg)
+                , (hId hC, sign (hSecret hC) dupMsg) ]
+  c "reconfig rejected: duplicate-identity padded set (R2)"
+    (either (const True) (const False) (adoptValidatorSet 0 vs dupSigs 1 dupSet))
+  -- R2 regression: mass replacement (>1 join) rejected
+  let bigSet = ValidatorSet (vsetMembers vs ++ [hId hE, hId (mkHospital "G" 7)]) 1
+      bigMsg = reconfigDigest (vsetMembers vs) 0 (vsetMembers bigSet) 1 1
+      bigSigs = [ (hId h, sign (hSecret h) bigMsg), (hId h2, sign (hSecret h2) bigMsg)
+                , (hId hC, sign (hSecret hC) bigMsg) ]
+  c "reconfig rejected: more than one join per epoch (R2)"
+    (either (const True) (const False) (adoptValidatorSet 0 vs bigSigs 1 bigSet))
 
   -- ── Property tests (randomised, base-only) ─────────────────────────
   -- medianTime always lands within [min,max] of its inputs.

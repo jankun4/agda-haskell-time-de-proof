@@ -20,8 +20,9 @@ Sanctum delivers that with:
   certificate (`Testament`) proving "this document existed at this time", and the
   recipient verifies it **without contacting the network** — essential when a node
   is air-gapped;
-- a **total smart-contract layer** (Cardano/EUTXO-flavoured validators) that needs
-  **no gas and no fees**, because every contract is *proven to halt*;
+- a **total on-chain expression language** (a minimal validator calculus today; a
+  fuller, Cardano/EUTXO-style language is proved total separately as headroom) that
+  needs **no gas and no fees**, because every contract is *proven to halt*;
 - **dynamic membership**: new hospitals join over time through a quorum-authorised
   reconfiguration recorded on the ledger itself.
 
@@ -106,7 +107,7 @@ LICENSE                   BSD-3-Clause
 ```sh
 scripts/check.sh                       # type-check every Agda thesis (needs agda + agda-stdlib)
 scripts/extract.sh                     # generate haskell/gen/ from the Agda kernel and run it
-cd haskell && cabal build              # build the node
+cd haskell && cabal build all          # build the node (and the test-suite)
 cabal run sanctum-test                 # run the test-suite
 cabal run sanctum-node                 # run the hospital-network demo
 ```

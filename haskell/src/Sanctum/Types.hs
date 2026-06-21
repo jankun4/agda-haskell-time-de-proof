@@ -20,6 +20,7 @@ module Sanctum.Types
   , tDocument
   ) where
 
+import           Data.List      (nub)
 import           Sanctum.Crypto (Hash, Identity, Sig)
 
 -- P1 · Truth/Being: a Fact is the existence of a document (its digest).
@@ -64,9 +65,14 @@ validatorCount = length . vsetMembers
 faultBudget :: ValidatorSet -> Int
 faultBudget = vsetFault
 
--- Well-formed when n >= 3f+1 (the BFT bound the proofs assume).
+-- Well-formed when members are DISTINCT and n >= 3f+1 (the BFT bound the
+-- proofs assume).  Distinctness matters: duplicate identities would let a
+-- single party occupy several quorum slots and inflate overlap/size,
+-- breaking the honest-majority premise the Agda proof relies on.
 wellFormedVSet :: ValidatorSet -> Bool
-wellFormedVSet vs = validatorCount vs >= 3 * vsetFault vs + 1
+wellFormedVSet vs =
+  vsetMembers vs == nub (vsetMembers vs)
+  && validatorCount vs >= 3 * vsetFault vs + 1
 
 -- A quorum certificate: which members signed and the clock each gave.
 -- 'qcSigners' is the characteristic vector over 'vsetMembers' order;
@@ -87,6 +93,7 @@ data Testament = Testament
   , tCert        :: QuorumCert
   , tMerklePath  :: [Hash]      -- inclusion path of the attestation leaf
   , tLeafIndex   :: Int
+  , tLeafCount   :: Int         -- total leaves (binds the tree size; anti-CVE-2012-2459)
   } deriving (Eq, Show)
 
 tDocument :: Testament -> Fact

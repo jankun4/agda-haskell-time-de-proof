@@ -9,7 +9,8 @@ guaranteed.
 
 - **Byzantine validators.** Up to `f` of the `n ≥ 3f+1` validators may be
   arbitrarily malicious: equivocate, lie about their clocks, withhold
-  messages, collude. The remaining `≥ 2f+1` are honest.
+  messages, collude. With `n ≥ 3f+1` the remaining `≥ n−f` (honest) form a
+  quorum.
 - **Network.** Messages may be delayed, reordered, or dropped; the network
   may partition. Sanctum's *safety* (agreement, no forged history) does not
   depend on timing. Liveness (new blocks getting finalised) requires enough

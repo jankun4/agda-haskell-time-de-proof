@@ -6,11 +6,19 @@
 -- functions safe live in @../agda/src/Sanctum/Proofs/@:
 --
 --   * 'quorumReached'  ↔  Sanctum.Proofs.Quorum   (Agreement)
---   * 'medianTime'     ↔  Sanctum.Proofs.Time      (timestamp soundness)
---   * 'runContract'    ↔  Sanctum.Proofs.Totality  (totality ⇒ no gas)
+--   * 'medianTime'     ↔  Sanctum.Proofs.Time      (timestamp soundness*)
+--   * 'runContract'    ↔  Sanctum.Kernel.runContract, which Agda accepts as
+--                         a total (structurally-recursive) function — THAT
+--                         is the totality witness for the language the node
+--                         runs.  Sanctum.Proofs.Totality independently proves
+--                         a richer STLC-with-rec evaluator total, showing the
+--                         technique scales; it is not the executed language.
 --
--- Because the contract evaluator is total (proved in Agda), the node
--- needs neither gas nor fees: every contract provably halts.
+-- Because the executed evaluator is total (Agda accepts 'Kernel.runContract'),
+-- the node needs neither gas nor fees: every contract provably halts.
+-- (*) Time soundness is proved for a value with the median property; that
+-- 'medianTime' yields such a value is tested, not yet proved — see
+-- docs/limitations.md.
 module Sanctum.Core
   ( -- * Quorum rule
     countTrue
@@ -36,8 +44,10 @@ countTrue = length . filter id
 --   At n = 3f+1 this is the classic 2f+1; for n > 3f+1 it scales so that
 --   any two quorums still intersect in an honest validator (the proof
 --   obligation 2q ≥ n+f+1 holds for q = n−f exactly when n ≥ 3f+1).
+-- Saturating subtraction, matching the Agda kernel's ℕ monus (n ∸ f) so
+-- the Haskell mirror cannot diverge from the proof on malformed inputs.
 quorumThreshold :: Int -> Int -> Int
-quorumThreshold n f = n - f
+quorumThreshold n f = max 0 (n - f)
 
 quorumReached :: Int -> Int -> [Bool] -> Bool
 quorumReached n f signers = countTrue signers >= quorumThreshold n f

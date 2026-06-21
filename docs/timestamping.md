@@ -7,17 +7,17 @@ no external time source.
 ## The idea
 
 A block's timestamp is **not** set by its proposer. It is the **median** of
-the clock readings of the ≥ 2f+1 validators that signed the block. Each
+the clock readings of the ≥ n−f validators that signed the block. Each
 validator contributes its own clock as part of its vote
 (`Consensus.Vote.voteClock`); the agreed `blockTime` is `medianTime` of
 those samples (`Core.medianTime`, mirrored from `Kernel.medianTime`).
 
 ## Why the median is safe
 
-Suppose at most `f` of the `2f+1` signers are Byzantine (the BFT
-assumption), and the honest validators' clocks all lie in some real
-interval `[lo, hi]` (they are roughly synchronised — say within a few
-seconds). Then:
+Suppose more than `f` of the signers are honest (guaranteed when a quorum
+of `n−f` signs and at most `f` are Byzantine), and the honest validators'
+clocks all lie in some real interval `[lo, hi]` (they are roughly
+synchronised — say within a few seconds). Then:
 
 > **The median lies in `[lo, hi]`.**
 

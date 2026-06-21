@@ -4,7 +4,8 @@
 -- The heart of Byzantine resistance: QUORUM INTERSECTION.
 --
 -- A validator set of n members tolerates up to f Byzantine faults when
--- n ≤ 3f+1 and every decision needs a quorum of ≥ 2f+1 signatures.
+-- n ≥ 3f+1, with each decision needing a quorum of q signatures where
+-- 2q ≥ n+f+1 (the deployment rule q = n−f satisfies this; `deployment-bound`).
 -- We prove that any two such quorums must share at least one *honest*
 -- member.  From this, Agreement follows: two conflicting blocks can
 -- never both gather a quorum, so distrusting hospitals still converge
@@ -93,6 +94,43 @@ module _ (f : ℕ) where
             p₂ : lookup a i ∧ lookup b i ≡ true
             p₂ = trans (sym (lookup-∩ a b i)) pab
         in i , and-elimˡ p₂ , and-elimʳ p₂ , ph
+
+------------------------------------------------------------------------
+-- DEPLOYMENT BOUND · the n−f quorum rule discharges the obligation.
+--
+-- The running node uses quorum threshold q = n−f.  This lemma proves
+-- that this q satisfies the theorem's obligation  n+(f+1) ≤ q+q  exactly
+-- when the validator set is well-formed (n ≥ 3f+1).  It is the arithmetic
+-- link the safety story rests on; `P6_Harmony.Agreement` uses it to
+-- discharge the obligation from `wellFormedVSet`.
+
+private module Arith where
+  open import Data.Nat.Solver using (module +-*-Solver)
+  open +-*-Solver
+  collect : ∀ d f → (d + f) + (f + 1) ≡ d + (2 * f + 1)
+  collect = solve 2 (λ d f → (d :+ f) :+ (f :+ con 1) := d :+ (con 2 :* f :+ con 1)) refl
+  split31 : ∀ f → 3 * f + 1 ≡ (2 * f + 1) + f
+  split31 = solve 1 (λ f → con 3 :* f :+ con 1 := (con 2 :* f :+ con 1) :+ f) refl
+  reassoc : ∀ f → f + (2 * f + 1) ≡ 3 * f + 1
+  reassoc = solve 1 (λ f → f :+ (con 2 :* f :+ con 1) := con 3 :* f :+ con 1) refl
+
+deployment-bound : ∀ n f → 3 * f + 1 ≤ n →
+                   n + (f + 1) ≤ (n ∸ f) + (n ∸ f)
+deployment-bound n f h = begin
+  n + (f + 1)                    ≡⟨ cong (_+ (f + 1)) n≡d+f ⟩
+  ((n ∸ f) + f) + (f + 1)        ≡⟨ Arith.collect (n ∸ f) f ⟩
+  (n ∸ f) + (2 * f + 1)          ≤⟨ +-monoʳ-≤ (n ∸ f) 2f+1≤d ⟩
+  (n ∸ f) + (n ∸ f)              ∎
+  where
+    open ≤-Reasoning
+    f≤n : f ≤ n
+    f≤n = ≤-trans (subst (f ≤_) (Arith.reassoc f) (m≤m+n f (2 * f + 1))) h
+    n≡d+f : n ≡ (n ∸ f) + f
+    n≡d+f = sym (m∸n+n≡m f≤n)
+    2f+1≤d : 2 * f + 1 ≤ n ∸ f
+    2f+1≤d = subst (_≤ n ∸ f)
+               (trans (cong (_∸ f) (Arith.split31 f)) (m+n∸n≡m (2 * f + 1) f))
+               (∸-monoˡ-≤ f h)
 
 -- The operational Agreement corollary (no two conflicting blocks can both
 -- be finalised at one height) is stated over concrete blocks and quorum

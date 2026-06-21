@@ -9,12 +9,14 @@
 -- The kernel computes the three security-critical quantities the proofs
 -- are about:
 --
---   * `quorumReached` — does a certificate meet the 2f+1 threshold?
---                        (safety: Sanctum.Proofs.Quorum)
+--   * `quorumReached` — does a certificate meet the n−f threshold?
+--                        (safety: Sanctum.Proofs.Quorum, incl. deployment-bound)
 --   * `medianTime`    — the BFT-agreed block time from clock samples.
 --                        (soundness: Sanctum.Proofs.Time)
---   * `runContract`   — a total on-chain expression evaluator.
---                        (totality: Sanctum.Proofs.Totality)
+--   * `runContract`   — a total on-chain expression evaluator; Agda accepts
+--                        it as structurally recursive, which IS its totality
+--                        proof.  (Sanctum.Proofs.Totality proves a richer STLC
+--                        total separately, as scalability headroom.)
 --
 -- `main` is a self-test demonstrating the extracted core running.
 ------------------------------------------------------------------------

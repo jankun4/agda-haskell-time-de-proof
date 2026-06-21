@@ -87,9 +87,11 @@ main = do
       newSet = ValidatorSet
         { vsetMembers = vsetMembers validators ++ [hId riverside]
         , vsetFault   = 1 }                       -- n=5 ≥ 3f+1 ✓
-      -- the CURRENT set SIGNS a certificate committing to the new set and
-      -- the target epoch (a quorum, n−f = 3, of St Mary/General/St Luke's)
-      reconfigMsg = reconfigDigest (vsetMembers newSet) 1 (vsetFault newSet)
+      -- the CURRENT set SIGNS a certificate committing to source (current
+      -- members + epoch 0) and target (new members + epoch 1 + fault) —
+      -- a quorum, n−f = 3, of St Mary/General/St Luke's
+      reconfigMsg = reconfigDigest (vsetMembers validators) 0
+                                   (vsetMembers newSet) 1 (vsetFault newSet)
       reconfigSigs =
         [ (hId stMary,  sign (hSecret stMary)  reconfigMsg)
         , (hId general, sign (hSecret general) reconfigMsg)

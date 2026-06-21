@@ -78,14 +78,23 @@ attestationDigest :: Identity -> Hash -> Integer -> Hash
 attestationDigest author factHash t =
   hashConcat [ fromIntegral (unIdentity author), unHash factHash, fromIntegral t ]
 
--- | The digest a reconfiguration certificate must cover: it binds the
---   proposed members, the target epoch, and the proposed fault budget, so
---   a signature authorising one reconfiguration cannot be replayed for
---   another set or epoch.
-reconfigDigest :: [Identity] -> Int -> Int -> Hash
-reconfigDigest members toEpoch fault =
-  hashConcat (map (fromIntegral . unIdentity) members
-              ++ [fromIntegral toEpoch, fromIntegral fault])
+-- | The digest a reconfiguration certificate must cover.  It binds BOTH
+--   the source context (current members + current epoch) and the target
+--   (proposed members + target epoch + proposed fault budget), so a
+--   signature authorising one reconfiguration cannot be replayed against
+--   a different current set, a different epoch, or a parallel fork.
+reconfigDigest
+  :: [Identity]  -- ^ current members (source binding)
+  -> Int         -- ^ current epoch  (source binding)
+  -> [Identity]  -- ^ proposed members
+  -> Int         -- ^ target epoch
+  -> Int         -- ^ proposed fault budget
+  -> Hash
+reconfigDigest current fromEpoch proposed toEpoch fault =
+  hashConcat ( map (fromIntegral . unIdentity) current
+            ++ [0x5e]                                    -- domain separator
+            ++ map (fromIntegral . unIdentity) proposed
+            ++ [fromIntegral fromEpoch, fromIntegral toEpoch, fromIntegral fault])
 
 ----------------------------------------------------------------------
 -- Signatures: textbook Schnorr over a small fixed prime (DEMO).

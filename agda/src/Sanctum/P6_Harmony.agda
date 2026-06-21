@@ -44,10 +44,14 @@ import Sanctum.Proofs.Time as T
 module Agreement
   (vs  : ValidatorSet)
   (h   : Vec Bool (size vs))                       -- the honest validators
-  (qb  : size vs + (fault vs + 1) ≤                -- quorum obligation 2q ≥ n+f+1
-         quorumThreshold vs + quorumThreshold vs)  --   (holds for q=n−f when n≥3f+1)
+  (wf  : 3 * fault vs + 1 ≤ size vs)               -- well-formedness: n ≥ 3f+1
   (d≤f : count (∁ h) ≤ fault vs)                   -- at most f dishonest
   where
+
+  -- The quorum obligation (2q ≥ n+f+1 for q = n−f) is now DISCHARGED from
+  -- well-formedness, not assumed — via Quorum.deployment-bound.
+  qb : size vs + (fault vs + 1) ≤ quorumThreshold vs + quorumThreshold vs
+  qb = Q.deployment-bound (size vs) (fault vs) wf
 
   -- Any two quorums share an honest validator.
   shared-honest-signer :

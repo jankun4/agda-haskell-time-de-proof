@@ -23,7 +23,12 @@ test*, not *by the build graph*.
 - **Roadmap:** build `haskell/gen` into the node behind a cabal flag, or
   prove `Core ≡ Kernel` once and for all.
 
-## 2. Two theorems are not yet wired all the way to the executable
+## 2. Some theorems are not yet wired all the way to the executable
+
+> **Now closed (round 2):** the deployment arithmetic
+> `n ≥ 3f+1 ⇒ n+(f+1) ≤ (n−f)+(n−f)` is machine-checked as
+> `Proofs/Quorum.deployment-bound` and `P6_Harmony.Agreement` discharges
+> the quorum obligation from `wellFormedVSet` rather than assuming it.
 
 - **Median existence.** `Proofs/Time.agda` proves: *if* a value has the
   median property (`IsMedian`), it lies within the honest clock interval.
@@ -31,6 +36,12 @@ test*, not *by the build graph*.
   + middle element) *produces* a value satisfying `IsMedian`. The
   algorithm is standard and tested, but the bridge lemma
   `IsMedian f (medianTime ts) ts` is future work.
+- **Time-soundness frame mismatch.** `median-bound` is stated for a sample
+  vector of size `n ≤ 2f+1`, but `Consensus.finalise` takes the median over
+  *all* endorsers (which can exceed `2f+1`). So the theorem, as stated, does
+  not directly instantiate at the configuration the node finalises. The fix
+  is to restate the bound for "≥ f+1 honest among `k ≥ 2f+1` samples"; until
+  then, treat time-soundness as proved for the minimal-quorum frame only.
 - **No honest equivocation.** `P6_Harmony.no-two-conflicting` derives
   "two finalised blocks are equal" from a *hypothesis* that an honest
   validator never signs two different blocks at one height. Discharging
@@ -39,9 +50,21 @@ test*, not *by the build graph*.
   it rests on **is** fully proved.)
 - **Reconfiguration lineage.** `Proofs/Append.Reconfiguration` proves the
   authority lineage over an *abstract* `Approves` relation. The concrete
-  `Approves` is `Ledger.adoptValidatorSet` (which now verifies signatures —
-  see the threat model); tying the abstract theorem to the concrete
-  `Chain`/`epoch` is future work.
+  `Approves` is `Ledger.adoptValidatorSet` (which now verifies signatures
+  bound to source+target context, enforces distinct members, ≤1 join/epoch,
+  and quorum overlap — see the threat model); tying the abstract theorem to
+  the concrete `Chain`/`epoch` is future work.
+
+  **Lineage ≠ honesty (important).** Even fully wired, the lineage theorem
+  proves only that authority descended through quorum-authorised steps —
+  **not** that the honest fraction was preserved. A coalition already
+  holding a current quorum can migrate authority across several epochs
+  while every step stays "valid". The continuity rules (distinct members,
+  ≤1 join per epoch, eviction ≤ f, quorum overlap) *slow and expose* this
+  but cannot stop it: the protocol cannot identify which members are honest.
+  Preventing a slow coup is an **out-of-protocol governance** responsibility
+  (super-majority of *hospitals*, published change notices, human review),
+  not a property proved here.
 
 ## 3. The bundled cryptography is a DEMO
 
